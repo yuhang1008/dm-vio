@@ -69,7 +69,7 @@ public:
 		return clone;
 	}
 
-
+	//return pixel value
 	inline T& at(int x, int y) {return data[(int)x+((int)y)*w];}
 	inline T& at(int i) {return data[i];}
 
@@ -125,35 +125,8 @@ public:
 		}
 	}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 private:
-	bool ownData;
+	bool ownData; //if the instance has actual image data
 };
 
 typedef Eigen::Matrix<unsigned char,3,1> Vec3b;

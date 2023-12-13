@@ -44,13 +44,15 @@ namespace IOWrap
 PangolinDSOViewer::PangolinDSOViewer(int w, int h, bool startRunThread, std::shared_ptr<dmvio::SettingsUtil>
         settingsUtilPassed, std::shared_ptr<double> normalizeCamSize)
         : HCalib(0), settingsUtil(std::move(settingsUtilPassed)), normalizeCamSize(normalizeCamSize)
-{
+{	
+
+	// set viewer size
 	this->w = w;
 	this->h = h;
 	running=true;
 
 
-	{
+	{	// init images to black
 		boost::unique_lock<boost::mutex> lk(openImagesMutex);
 		internalVideoImg = new MinimalImageB3(w,h);
 		internalKFImg = new MinimalImageB3(w,h);
@@ -63,14 +65,15 @@ PangolinDSOViewer::PangolinDSOViewer(int w, int h, bool startRunThread, std::sha
 	}
 
 
-	{
+	{	// init KeyFrameDisplay objects
+		// class KeyFrameDisplay stores a pointcloud associated to a Keyframe, and camera information at the moment
 		currentCam = new KeyFrameDisplay();
         currentGTCam = new KeyFrameDisplay();
 	}
 
 	needReset = false;
 
-
+	// in main function, startRunThread set to false
     if(startRunThread)
         runThread = boost::thread(&PangolinDSOViewer::run, this);
 
@@ -191,7 +194,7 @@ void PangolinDSOViewer::run()
             double sizeFactor = 1.0;
 
             // I need model3DMutex lock before I get currentCam->camToWorld.
-            boost::unique_lock<boost::mutex> lk3d(model3DMutex);
+            boost::unique_lock<boost::mutex> lk3d(model3DMutex); // lock already!
 
             auto updatedVisualization3DCam = followCam.updateVisualizationCam(currentCam->camToWorld,
                                                                          Visualization3D_camera);
@@ -212,7 +215,7 @@ void PangolinDSOViewer::run()
 				float blue[3] = {0,0,1};
 				if(this->settings_showKFCameras) fh->drawCam(1,blue,0.1 * sizeFactor);
 
-
+			//???
 				refreshed += (int)(fh->refreshPC(refreshed < 10, this->settings_scaledVarTH, this->settings_absVarTH,
 						this->settings_pointCloudMode, this->settings_minRelBS, this->settings_sparsity));
 				fh->drawPC(1);
@@ -232,14 +235,13 @@ void PangolinDSOViewer::run()
 
 
 		openImagesMutex.lock();
+
+		// for upload???
 		if(videoImgChanged) 	texVideo.Upload(internalVideoImg->data,GL_BGR,GL_UNSIGNED_BYTE);
 		if(kfImgChanged) 		texKFDepth.Upload(internalKFImg->data,GL_BGR,GL_UNSIGNED_BYTE);
 		if(resImgChanged) 		texResidual.Upload(internalResImg->data,GL_BGR,GL_UNSIGNED_BYTE);
 		videoImgChanged=kfImgChanged=resImgChanged=false;
 		openImagesMutex.unlock();
-
-
-
 
 		// update fps counters
 		{
@@ -330,7 +332,8 @@ void PangolinDSOViewer::run()
 	    setting_maxFrames = settings_nMaxFrames.Get();
 	    setting_kfGlobalWeight = settings_kfFrequency.Get();
 	    setting_minGradHistAdd = settings_gradHistAdd.Get();
-
+		
+		// don't know
         if(settingsUtil)
         {
             settingsUtil->updatePangolinSettings();
@@ -573,13 +576,13 @@ void PangolinDSOViewer::publishCamPose(FrameShell* frame,
 	allFramePoses.push_back(frame->camToWorld.translation().cast<float>());
 }
 
-
+// push frame into output 3d wrapper
 void PangolinDSOViewer::pushLiveFrame(FrameHessian* image)
-{
+{	
 	if(!setting_render_displayVideo) return;
     if(disableAllDisplay) return;
 
-	boost::unique_lock<boost::mutex> lk(openImagesMutex);
+	boost::unique_lock<boost::mutex> lk(openImagesMutex); // lock
 
 	for(int i=0;i<w*h;i++)
 		internalVideoImg->data[i][0] =

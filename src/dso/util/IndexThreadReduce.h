@@ -36,6 +36,7 @@
 namespace dso
 {
 using namespace boost::placeholders;
+
 template<typename Running>
 class IndexThreadReduce
 {
@@ -48,7 +49,7 @@ public:
 		nextIndex = 0;
 		maxIndex = 0;
 		stepSize = 1;
-		callPerIndex = boost::bind(&IndexThreadReduce::callPerIndexDefault, this, _1, _2, _3, _4);
+		callPerIndex = boost::bind(&IndexThreadReduce::callPerIndexDefault, this, _1, _2, _3, _4); // bind an empty function to callPerIndex to initialzed it!
 
 		running = true;
 		for(int i=0;i<NUM_THREADS;i++)
@@ -59,6 +60,7 @@ public:
 		}
 
 	}
+
 	inline ~IndexThreadReduce()
 	{
 		running = false;
@@ -87,7 +89,6 @@ public:
 //		}
 
 
-
 		if(stepSize == 0)
 			stepSize = ((end-first)+NUM_THREADS-1)/NUM_THREADS;
 
@@ -97,21 +98,20 @@ public:
 		boost::unique_lock<boost::mutex> lock(exMutex);
 
 		// save
-		this->callPerIndex = callPerIndex;
-		nextIndex = first;
-		maxIndex = end;
-		this->stepSize = stepSize;
+		this->callPerIndex = callPerIndex; // pass lambda fonction
+		nextIndex = first; // first point index, 0
+		maxIndex = end; // lst point index, npts
+		this->stepSize = stepSize; // 50
 
 		// go worker threads!
 		for(int i=0;i<NUM_THREADS;i++)
 		{
 			isDone[i] = false;
-			gotOne[i] = false;
+			gotOne[i] = false; //?
 		}
 
 		// let them start!
 		todo_signal.notify_all();
-
 
 		//printf("reduce waiting for threads to finish\n");
 		// wait for all worker threads to signal they are done.
@@ -138,7 +138,7 @@ public:
 		//printf("reduce done (all threads finished)\n");
 	}
 
-	Running stats;
+	Running stats; // this value could be some accumulative value from lambda function, but it is not used in DSO!!!
 
 private:
 	boost::thread workerThreads[NUM_THREADS];
@@ -183,7 +183,8 @@ private:
 			// if got something: do it (unlock in the meantime)
 			if(gotSomething)
 			{
-				lock.unlock();
+				// Unlock the mutex with lock.unlock(). This is important to allow other threads to pick tasks.
+				lock.unlock(); 
 
 				assert(callPerIndex != 0);
 
@@ -202,15 +203,17 @@ private:
 					lock.unlock();
 					assert(callPerIndex != 0);
 					Running s; memset(&s, 0, sizeof(Running));
-					callPerIndex(0, 0, &s, idx);
+					callPerIndex(0, 0, &s, idx); // doing nothing actually
 					gotOne[idx] = true;
 					lock.lock();
-					stats += s;
+					stats += s; 
 				}
-				isDone[idx] = true;
+				isDone[idx] = true; // nothing to do, isDone
 				//printf("worker %d waiting..\n", idx);
 				done_signal.notify_all();
-				todo_signal.wait(lock);
+				// When wait is called, it atomically releases the 
+				// mutex and suspends the execution of the thread.
+				todo_signal.wait(lock); 
 			}
 		}
 	}

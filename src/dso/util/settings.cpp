@@ -43,7 +43,7 @@ double setting_forceNoKFTranslationThresh = 0.0; // Force to create no KF if tra
 
 double setting_maxTimeBetweenKeyframes = 0;
 
-// If negative, the respective positive value will be used only if in non-RT mode.
+// If negative, the respective positive value will be used only if in non-RT (real-time) mode.
 // The idea of this parameter is that in non-RT mode the systems otherwise can make successive frames keyframes, which only rarely happens in RT mode.
 // Default is -0.5 with means that the parameter is 0.5 in non-RT mode and inactive in RT mode.
 // Fractional values are also possible.
@@ -293,7 +293,7 @@ int staticPattern[10][40][2] = {
 		 {-1,3},      {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100},
 		 {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}},
 
-		{{0,-2},	  {-1,-1},	   {1,-1},		{-2,0},		 {0,0},		  {2,0},	   {-1,1},		{0,2},		 {-100,-100}, {-100,-100},	// 8 for SSE efficiency
+		{{0,-2},	  {-1,-1},	   {1,-1},		{-2,0},		 {0,0},		  {2,0},	   {-1,1},		{0,2},		 {-100,-100}, {-100,-100},	// 8 for SSE efficiency // actually used in DSO
 		 {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100},
 		 {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100},
 		 {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}, {-100,-100}},

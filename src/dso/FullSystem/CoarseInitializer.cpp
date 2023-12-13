@@ -57,7 +57,8 @@ CoarseInitializer::CoarseInitializer(int ww, int hh)
 		numPoints[lvl] = 0;
 	}
 
-	JbBuffer = new Vec10f[ww*hh];
+	// for what?
+	JbBuffer = new Vec10f[ww*hh]; // 10x1 x (wxh) ??
 	JbBuffer_new = new Vec10f[ww*hh];
 
 
@@ -65,6 +66,8 @@ CoarseInitializer::CoarseInitializer(int ww, int hh)
 	fixAffine=true;
 	printDebug=false;
 
+	// Eigen::DiagonalMatrix<float, 8> wM;
+	// covariance matrix? rot:3 translation:3 scale:?2 a,b?
 	wM.diagonal()[0] = wM.diagonal()[1] = wM.diagonal()[2] = SCALE_XI_ROT;
 	wM.diagonal()[3] = wM.diagonal()[4] = wM.diagonal()[5] = SCALE_XI_TRANS;
 	wM.diagonal()[6] = SCALE_A;
@@ -86,18 +89,19 @@ bool CoarseInitializer::trackFrame(FrameHessian *newFrameHessian, std::vector<IO
 {
 	newFrame = newFrameHessian;
 
+	// why need so many wrappers? why need to push into every wrapper?
     for(IOWrap::Output3DWrapper* ow : wraps)
-        ow->pushLiveFrame(newFrameHessian);
+        ow->pushLiveFrame(newFrameHessian); 
 
-	int maxIterations[] = {5,5,10,30,50};
-
+	int maxIterations[] = {5,5,10,30,50}; //?
 
 	alphaK = 2.5*2.5;//*freeDebugParam1*freeDebugParam1;
 	alphaW = 150*150;//*freeDebugParam2*freeDebugParam2;
 	regWeight = 0.8;//*freeDebugParam4;
 	couplingWeight = 1;//*freeDebugParam5;
 
-	if(!snapped)
+	// initialize some parameters
+	if(!snapped) // snapped set false during set first frame
 	{
 		thisToNext.translation().setZero();
 		for(int lvl=0;lvl<pyrLevelsUsed;lvl++)
@@ -106,32 +110,48 @@ bool CoarseInitializer::trackFrame(FrameHessian *newFrameHessian, std::vector<IO
 			Pnt* ptsl = points[lvl];
 			for(int i=0;i<npts;i++)
 			{
-				ptsl[i].iR = 1;
-				ptsl[i].idepth_new = 1;
-				ptsl[i].lastHessian = 0;
+				ptsl[i].iR = 1; //?
+				ptsl[i].idepth_new = 1; //?
+				ptsl[i].lastHessian = 0; //?
 			}
 		}
 	}
 
+	// reference
+	SE3 refToNew_current = thisToNext; // constant motion model?
 
-	SE3 refToNew_current = thisToNext;
-
-	AffLight refToNew_aff_current = thisToNext_aff;
-
-	if(firstFrame->ab_exposure>0 && newFrame->ab_exposure>0)
-		refToNew_aff_current = AffLight(logf(newFrame->ab_exposure /  firstFrame->ab_exposure),0); // coarse approximation.
-
-
+	//?
 	Vec3f latestRes = Vec3f::Zero();
+
+	// reference affine function
+	AffLight refToNew_aff_current = thisToNext_aff; // initialized as a=b=0 in first frame
+
+	// both have exposure times
+	if(firstFrame->ab_exposure>0 && newFrame->ab_exposure>0)
+		// coarse approximation of current affine function
+		// a related to exposure and b related to error?
+		// a is propotional to log t, see eq 4
+		refToNew_aff_current = AffLight(logf(newFrame->ab_exposure /  firstFrame->ab_exposure),0); // ln(tn/to), 0
+
+	// coarse to fine (top to bottom)
 	for(int lvl=pyrLevelsUsed-1; lvl>=0; lvl--)
 	{
-
+		// propagate except for coarest level
 		if(lvl<pyrLevelsUsed-1)
+			// propagate the inverse depth of pixel from coarse to fine, (above to current)
+			// make the depth estimation for each pixel more accurate
 			propagateDown(lvl+1);
 
 		Mat88f H,Hsc; Vec8f b,bsc;
+
+		// at this level:
+		// set point energy to 0
+		// set idepth_new to current idepth
+		// if is the coarest level, for the bad points, try to initialize depth using nn points
 		resetPoints(lvl);
+
 		Vec3f resOld = calcResAndGS(lvl, H, b, Hsc, bsc, refToNew_current, refToNew_aff_current, false);
+
 		applyStep(lvl);
 
 		float lambda = 0.1;
@@ -254,16 +274,11 @@ bool CoarseInitializer::trackFrame(FrameHessian *newFrameHessian, std::vector<IO
 
 	}
 
-
-
 	thisToNext = refToNew_current;
 	thisToNext_aff = refToNew_aff_current;
 
 	for(int i=0;i<pyrLevelsUsed-1;i++)
 		propagateUp(i);
-
-
-
 
 	frameID++;
 	if(!snapped) snappedAt=0;
@@ -271,11 +286,7 @@ bool CoarseInitializer::trackFrame(FrameHessian *newFrameHessian, std::vector<IO
 	if(snapped && snappedAt==0)
 		snappedAt = frameID;
 
-
-
     debugPlot(0,wraps);
-
-
 
 	return snapped && frameID > snappedAt+5;
 }
@@ -329,7 +340,15 @@ void CoarseInitializer::debugPlot(int lvl, std::vector<IOWrap::Output3DWrapper*>
         ow->pushDepthImage(&iRImg);
 }
 
+
+
 // calculates residual, Hessian and Hessian-block neede for re-substituting depth.
+
+// lvl: Level of image pyramid.
+// H_out, H_out_sc: Output Hessians (probably 8x8 matrices).
+// b_out, b_out_sc: Output vectors associated with Hessians.
+// refToNew: Transformation (rotation and translation) from reference to new frame.
+// refToNew_aff: Affine light transformation between frames.
 Vec3f CoarseInitializer::calcResAndGS(
 		int lvl, Mat88f &H_out, Vec8f &b_out,
 		Mat88f &H_out_sc, Vec8f &b_out_sc,
@@ -337,11 +356,15 @@ Vec3f CoarseInitializer::calcResAndGS(
 		bool plot)
 {
 	int wl = w[lvl], hl = h[lvl];
+
+	// frame to frame
+	// dIp saves (I dx dy)
 	Eigen::Vector3f* colorRef = firstFrame->dIp[lvl];
 	Eigen::Vector3f* colorNew = newFrame->dIp[lvl];
 
-	Mat33f RKi = (refToNew.rotationMatrix() * Ki[lvl]).cast<float>();
-	Vec3f t = refToNew.translation().cast<float>();
+
+	Mat33f RKi = (refToNew.rotationMatrix() * Ki[lvl]).cast<float>(); // rotation * intrinsic matrix
+	Vec3f t = refToNew.translation().cast<float>(); //translation
 	Eigen::Vector2f r2new_aff = Eigen::Vector2f(exp(refToNew_aff.a), refToNew_aff.b);
 
 	float fxl = fx[lvl];
@@ -349,8 +372,7 @@ Vec3f CoarseInitializer::calcResAndGS(
 	float cxl = cx[lvl];
 	float cyl = cy[lvl];
 
-
-
+	// initialize these for what
     for(auto&& acc9 : acc9s)
     {
         acc9.initialize();
@@ -360,19 +382,27 @@ Vec3f CoarseInitializer::calcResAndGS(
         E.initialize();
     }
 
-	int npts = numPoints[lvl];
-	Pnt* ptsl = points[lvl];
+	int npts = numPoints[lvl]; //n_effective point at this level
+	Pnt* ptsl = points[lvl]; //pts last frame
 
     // This part takes most of the time for this method --> parallelize this only.
+
+	// lambda function, [&] is to capture local variables 
+	// reduce.reduce(processPointsForReduce, 0, npts, 50);
     auto processPointsForReduce = [&](int min=0, int max=1, double* stats=0, int tid=0)
-    {
-        auto& acc9 = acc9s[tid];
-        auto& E = accE[tid];
-        for(int i = min; i < max; i++)
+    {	
+
+        auto& acc9 = acc9s[tid]; //  Mat99f H; Vec9f b; size_t num;
+        auto& E = accE[tid]; // save energy?
+
+        for(int i = min; i < max; i++) // for specific points
         {
             Pnt* point = ptsl + i;
 
             point->maxstep = 1e10;
+
+			// if point is not good
+			// add point energy to accumulaor, point->isGood_new = false
             if(!point->isGood)
             {
                 E.updateSingle((float) (point->energy[0]));
@@ -381,6 +411,8 @@ Vec3f CoarseInitializer::calcResAndGS(
                 continue;
             }
 
+			// else (point->isGood)
+			// typedef Eigen::Matrix<float,8,1> VecNRf; residules?
             VecNRf dp0;
             VecNRf dp1;
             VecNRf dp2;
@@ -389,88 +421,120 @@ Vec3f CoarseInitializer::calcResAndGS(
             VecNRf dp5;
             VecNRf dp6;
             VecNRf dp7;
+
             VecNRf dd;
             VecNRf r;
-            JbBuffer_new[i].setZero();
 
-            // sum over all residuals.
+			//JbBuffer_new = new Vec10f[ww*hh];
+			// every point has 10 vector positions
+			// 0-7: sum(dd * dp). 8: sum(res*dd). 9: 1/(1+sum(dd*dd))=inverse hessian entry.
+            JbBuffer_new[i].setZero(); //
+
+            // sum over all residuals from pattern pixels.
             bool isGood = true;
-            float energy = 0;
-            for(int idx = 0; idx < patternNum; idx++)
-            {
+            float energy = 0; // total energy of residual of the pattern
+            for(int idx = 0; idx < patternNum; idx++) // idx: pattern index
+            {	
                 int dx = patternP[idx][0];
                 int dy = patternP[idx][1];
 
-
+				// pattern point projecte to current frame (constant moving model?)
+				// check the issue ============== problem ========================
+				// important pt here is 1/z_old * point_(old point in new frame)
                 Vec3f pt = RKi * Vec3f(point->u + dx, point->v + dy, 1) + t * point->idepth_new;
+
+				// 2d coordinates of projected point at nomalized plane
                 float u = pt[0] / pt[2];
                 float v = pt[1] / pt[2];
+				// pixel coordinates
                 float Ku = fxl * u + cxl;
                 float Kv = fyl * v + cyl;
-                float new_idepth = point->idepth_new / pt[2];
-
+                float new_idepth = point->idepth_new / pt[2]; // (1/z_i) / (z_i/z_j) = 1 / z_n
+				
+				// only consider pattern points in image range and has positive inverse depth
                 if(!(Ku > 1 && Kv > 1 && Ku < wl - 2 && Kv < hl - 2 && new_idepth > 0))
                 {
                     isGood = false;
                     break;
                 }
 
+				// use transformed point pixel position (float)
+				// hit color is at pixel (Ku, Kv), the interpulated dip from new frame
                 Vec3f hitColor = getInterpolatedElement33(colorNew, Ku, Kv, wl);
                 //Vec3f hitColor = getInterpolatedElement33BiCub(colorNew, Ku, Kv, wl);
 
                 //float rlR = colorRef[point->u+dx + (point->v+dy) * wl][0];
+
+
+				// point of last frame interpulated I on last frame
                 float rlR = getInterpolatedElement31(colorRef, point->u + dx, point->v + dy, wl);
 
+				// both I of new and old frame cannot be infinite
                 if(!std::isfinite(rlR) || !std::isfinite((float) hitColor[0]))
                 {
                     isGood = false;
                     break;
                 }
 
+                float residual = hitColor[0] - r2new_aff[0] * rlR - r2new_aff[1]; // eq(4), see notes also
 
-                float residual = hitColor[0] - r2new_aff[0] * rlR - r2new_aff[1];
-                float hw = fabs(residual) < setting_huberTH ? 1 : setting_huberTH / fabs(residual);
+
+                float hw = fabs(residual) < setting_huberTH ? 1 : setting_huberTH / fabs(residual); // Huber funtion coefficient
                 energy += hw * residual * residual * (2 - hw);
-
-
+				
+				//pt 2 = z_n/z_o
                 float dxdd = (t[0] - t[2] * u) / pt[2];
                 float dydd = (t[1] - t[2] * v) / pt[2];
 
-                if(hw < 1) hw = sqrtf(hw);
-                float dxInterp = hw * hitColor[1] * fxl;
-                float dyInterp = hw * hitColor[2] * fyl;
-                dp0[idx] = new_idepth * dxInterp;
-                dp1[idx] = new_idepth * dyInterp;
-                dp2[idx] = -new_idepth * (u * dxInterp + v * dyInterp);
-                dp3[idx] = -u * v * dxInterp - (1 + v * v) * dyInterp;
-                dp4[idx] = (1 + u * u) * dxInterp + u * v * dyInterp;
-                dp5[idx] = -v * dxInterp + u * dyInterp;
-                dp6[idx] = -hw * r2new_aff[0] * rlR;
-                dp7[idx] = -hw * 1;
+                if(hw < 1) hw = sqrtf(hw); // else hw = 1
+                float dxInterp = hw * hitColor[1] * fxl; // hw*dx*fx
+                float dyInterp = hw * hitColor[2] * fyl; // hw*dy*fy
+
+				// eq 29 corresponding rows, dr/ d_pose
+                dp0[idx] = new_idepth * dxInterp; // ro*hw*dx*fx
+                dp1[idx] = new_idepth * dyInterp; // ro*hw*dy*fy
+                dp2[idx] = -new_idepth * (u * dxInterp + v * dyInterp); // -ro * (uj*hw*dx*fx + vj*hw*dy*fy)
+                dp3[idx] = -u * v * dxInterp - (1 + v * v) * dyInterp; // -uj*vj*hw*dx*fx - (1+vj*vj)*hw*dy*fy
+                dp4[idx] = (1 + u * u) * dxInterp + u * v * dyInterp; // (1+uj*uj)*hw*dx*fx + u*v*hw*dy*fy
+                dp5[idx] = -v * dxInterp + u * dyInterp; // -vj*hw*dx*fx + uj*hw*dy*fy
+
+				// eq 14 and 15 dr/ d affine coef
+                dp6[idx] = -hw * r2new_aff[0] * rlR; // -hw * a_what * Ii  
+                dp7[idx] = -hw * 1; // -hw
+
+				//eq 24 in notes, d_r/d_inverseDepth
                 dd[idx] = dxInterp * dxdd + dyInterp * dydd;
+
+				// eq 10, actual lose
                 r[idx] = hw * residual;
 
+				//pt 2 = z_j/zi, see eq 23, inverse norm of dpixel/d_inverse_depth ?
                 float maxstep = 1.0f / Vec2f(dxdd * fxl, dydd * fyl).norm();
-                if(maxstep < point->maxstep) point->maxstep = maxstep;
+                if(maxstep < point->maxstep) point->maxstep = maxstep; // minimum max_depth
 
-                // immediately compute dp*dd' and dd*dd' in JbBuffer1.
+                // immediately compute dp*dd' and dd*dd' in JbBuffer_new.
+				// note i is the index of point from a certain thread
                 JbBuffer_new[i][0] += dp0[idx] * dd[idx];
                 JbBuffer_new[i][1] += dp1[idx] * dd[idx];
                 JbBuffer_new[i][2] += dp2[idx] * dd[idx];
                 JbBuffer_new[i][3] += dp3[idx] * dd[idx];
                 JbBuffer_new[i][4] += dp4[idx] * dd[idx];
                 JbBuffer_new[i][5] += dp5[idx] * dd[idx];
+
+				// d_affine * d_d
                 JbBuffer_new[i][6] += dp6[idx] * dd[idx];
                 JbBuffer_new[i][7] += dp7[idx] * dd[idx];
                 JbBuffer_new[i][8] += r[idx] * dd[idx];
                 JbBuffer_new[i][9] += dd[idx] * dd[idx];
             }
 
+			// !isGood means out of image range or I of (last or curren) image is infinite
+			//  energy is the total huber loss of residual
             if(!isGood || energy > point->outlierTH * 20)
             {
-                E.updateSingle((float) (point->energy[0]));
+                E.updateSingle((float) (point->energy[0])); //update last energy
                 point->isGood_new = false;
-                point->energy_new = point->energy;
+                point->energy_new = point->energy; // new_energy = last_energy
                 continue;
             }
 
@@ -478,9 +542,25 @@ Vec3f CoarseInitializer::calcResAndGS(
             // add into energy.
             E.updateSingle(energy);
             point->isGood_new = true;
-            point->energy_new[0] = energy;
+            point->energy_new[0] = energy; // energy of total surrounding parterns 
 
             // update Hessian matrix.
+			// i = 0; i < 11 ; 1 += 4
+			// i = 0, 4 ???  patternNum = 8
+			// 0-5 pose, 6 and 7 affine, r residual
+
+			// follow order, from left to right, from top to bottom
+			// x1x1, x1x2, x1x3, x1x4, x1x5, x1x6, x1a, x1b, x1r,
+			// 		 x2x2, x2x3, x2x4, x2x5, x2x6, x2a, x2b, x2r,
+			// 			   x3x3, x3x4, x3x5, x3x6, x3a, x3b, x3r,
+			// 					 x4x4, x4x5, x4x6, x4a, x4b, x4r,
+			// 						   x5x5, x5x6, x5a, x5b, x5r,
+			// 								 x6x6, x6a, x6b, x6r,
+			// 									   aa,  ab,  ar,
+			// 					 						bb,  br,
+			// 												 rr.
+
+			// so i will be 0 and 4, each time update 4 values
             for(int i = 0; i + 3 < patternNum; i += 4)
                 acc9.updateSSE(
                         _mm_load_ps(((float*) (&dp0)) + i),
@@ -493,24 +573,23 @@ Vec3f CoarseInitializer::calcResAndGS(
                         _mm_load_ps(((float*) (&dp7)) + i),
                         _mm_load_ps(((float*) (&r)) + i));
 
-
+			// for handling partternNum is not multiple of 4, add the rest 1 by 1
             for(int i = ((patternNum >> 2) << 2); i < patternNum; i++)
-                acc9.updateSingle(
+                acc9.updateSingle( //updare at the first elements for 45 entries
                         (float) dp0[i], (float) dp1[i], (float) dp2[i], (float) dp3[i],
                         (float) dp4[i], (float) dp5[i], (float) dp6[i], (float) dp7[i],
                         (float) r[i]);
-
-
         }
     };
 
-    reduce.reduce(processPointsForReduce, 0, npts, 50);
 
-    for(auto&& acc9 : acc9s)
+    reduce.reduce(processPointsForReduce, 0, npts, 50); // first, end, step size
+
+    for(auto&& acc9 : acc9s) //class Accumulator9, stores H and b
     {
         acc9.finish();
     }
-    for(auto&& E : accE)
+    for(auto&& E : accE) // class Accumulator11, stores error
     {
         E.finish();
     }
@@ -519,7 +598,7 @@ Vec3f CoarseInitializer::calcResAndGS(
 	// calculate alpha energy, and decide if we cap it.
 	Accumulator11 EAlpha;
 	EAlpha.initialize();
-	for(int i=0;i<npts;i++)
+	for(int i=0;i<npts;i++) // pts from last frame
 	{
 		Pnt* point = ptsl+i;
 		if(!point->isGood_new)
@@ -624,6 +703,7 @@ Vec3f CoarseInitializer::calcResAndGS(
 	return Vec3f(A, alphaEnergy, num);
 }
 
+
 float CoarseInitializer::rescale()
 {
 	float factor = 20*thisToNext.translation().norm();
@@ -668,11 +748,17 @@ Vec3f CoarseInitializer::calcEC(int lvl)
 	//printf("ER: %f %f %f!\n", couplingWeight*E.A1m[0], couplingWeight*E.A1m[1], (float)E.num.numIn1m);
 	return Vec3f(couplingWeight*E.A1m[0], couplingWeight*E.A1m[1], E.num);
 }
+
+// use the nn points to regulate the inv-depth of each selected points,
+// make the depth estimation more consistent and trustable
 void CoarseInitializer::optReg(int lvl)
 {
 	int npts = numPoints[lvl];
 	Pnt* ptsl = points[lvl];
-	if(!snapped)
+	// must be snapped 
+	// at first frame it is set 'false'
+	// so if currently is the second frame, will do nothing
+	if(!snapped) 
 	{
 		return;
 	}
@@ -697,7 +783,7 @@ void CoarseInitializer::optReg(int lvl)
 		if(nnn > 2)
 		{
 			std::nth_element(idnn,idnn+nnn/2,idnn+nnn);
-			point->iR = (1-regWeight)*point->idepth + regWeight*idnn[nnn/2];
+			point->iR = (1-regWeight)*point->idepth + regWeight*idnn[nnn/2]; // here save the interpulated inverse depth
 		}
 	}
 
@@ -746,33 +832,47 @@ void CoarseInitializer::propagateUp(int srcLvl)
 	optReg(srcLvl+1);
 }
 
+// propagate the inverse depth of pixel from srcLvl to level below it
+// make the depth estimation for each pixel more accurate
 void CoarseInitializer::propagateDown(int srcLvl)
 {
 	assert(srcLvl>0);
 	// set idepth of target
 
-	int nptst= numPoints[srcLvl-1];
-	Pnt* ptss = points[srcLvl];
-	Pnt* ptst = points[srcLvl-1];
+	int nptst= numPoints[srcLvl-1]; 
+	Pnt* ptss = points[srcLvl]; //src
+	Pnt* ptst = points[srcLvl-1]; //to
 
-	for(int i=0;i<nptst;i++)
+	for(int i=0;i<nptst;i++) // for all pts in srclev-1
 	{
 		Pnt* point = ptst+i;
 		Pnt* parent = ptss+point->parent;
 
+		// if parent point is not good
+		// Hessian value at each point might represent the confidence or reliability of the depth estimate
 		if(!parent->isGood || parent->lastHessian < 0.1) continue;
+		
+		// If the current point itself is not "good":
+    	// Directly inherit the depth (inverse depth iR in this context) from its parent.
+    	// Mark the point as "good" and reset its Hessian value.
 		if(!point->isGood)
 		{
 			point->iR = point->idepth = point->idepth_new = parent->iR;
 			point->isGood=true;
-			point->lastHessian=0;
+			point->lastHessian=0; // last time not good
 		}
+		// it seems to be too tricky
+		// both current pts and parent point are good
+		// interpulation
 		else
 		{
 			float newiR = (point->iR*point->lastHessian*2 + parent->iR*parent->lastHessian) / (point->lastHessian*2+parent->lastHessian);
 			point->iR = point->idepth = point->idepth_new = newiR;
 		}
 	}
+
+	// use the nn points to regulate the inv-depth of each selected points, save to iR
+	// make the depth estimation more consistent and trustable
 	optReg(srcLvl-1);
 }
 
@@ -801,93 +901,153 @@ void CoarseInitializer::makeGradients(Eigen::Vector3f** data)
 		}
 	}
 }
-void CoarseInitializer::setFirst(	CalibHessian* HCalib, FrameHessian* newFrameHessian)
+
+// at first frame:
+// make calibration paras
+// in all levels, select feature pixels based on irradiance and gradient change:
+	// at the first level:
+	// make image histogram, feature pixel selection based on irradiance in different levels
+	// stores the result in map_out, which indicate which level the pixel is selected: enum PixelSelectorStatus {PIXSEL_VOID=0, PIXSEL_1, PIXSEL_2, PIXSEL_3};
+	// return number of pixel that is selected
+
+	// at other levels
+	// statusMapB will save the It only marks which pixels are selected based on having the highest gradient magnitude 
+	// in any of the considered directions (XX, YY, XY, YX) within their respective grid cells (size determined by pot).
+	// return  number of selected pixels
+	// will do this -coarse-to-fine recrusively	based on the density desired	
+
+	// Pnt* pl = points[lvl]; for these initialized points 
+	// use kdtree to find 10 nearest points and 
+	// if not fiest level, save the parent and neighbors indices and distance
+void CoarseInitializer::setFirst(CalibHessian* HCalib, FrameHessian* newFrameHessian)
 {
 
-	makeK(HCalib);
+	makeK(HCalib); // make calibration paras of different pyramid levels from HCalib
 	firstFrame = newFrameHessian;
 
-	PixelSelector sel(w[0],h[0]);
-
+	// generate random pixel mask, saved in randomPattern, 
+	// make and deterministic block dividing for each level, save the block w h 
+	PixelSelector sel(w[0],h[0]); 
+	
 	float* statusMap = new float[w[0]*h[0]];
 	bool* statusMapB = new bool[w[0]*h[0]];
-
 	float densities[] = {0.03,0.05,0.15,0.5,1};
+
 	for(int lvl=0; lvl<pyrLevelsUsed; lvl++)
 	{
 		sel.currentPotential = 3;
 		int npts;
 		if(lvl == 0)
-			npts = sel.makeMaps(firstFrame, statusMap,densities[lvl]*w[0]*h[0],1,false,2);
+
+// need to figure out the difference between two first level and others
+
+		// at the first level:
+		// make image histogram, feature pixel selection based on grascale value change on arbitary 16 directions in different levels
+		// stores the result in map_out, which indicate which level the pixel is selected: enum PixelSelectorStatus {PIXSEL_VOID=0, PIXSEL_1, PIXSEL_2, PIXSEL_3};
+		// return number of pixel that is selected
+														// number of point wanted
+			npts = sel.makeMaps(firstFrame, statusMap, densities[lvl]*w[0]*h[0], 1, false, 2); // return number of points actually selected
 		else
+
+		// at other levels
+		// statusMapB (just bool) marks which pixels are selected based on having the highest gradient magnitude 
+		// in any of the considered directions (XX, YY, XY, YX) within their respective grid cells (size determined by pot).
+		// return  number of selected pixels
+		// will do this recrusively	based on the density desired	
 			npts = makePixelStatus(firstFrame->dIp[lvl], statusMapB, w[lvl], h[lvl], densities[lvl]*w[0]*h[0]);
 
 
+		// Pnt* points[PYR_LEVELS];
+
+		// ! the following will initialize all points that are selected in above 2 lines of codes
 
 		if(points[lvl] != 0) delete[] points[lvl];
-		points[lvl] = new Pnt[npts];
-
-		// set idepth map to initially 1 everywhere.
+		points[lvl] = new Pnt[npts]; // initialize points obj of the level
 		int wl = w[lvl], hl = h[lvl];
-		Pnt* pl = points[lvl];
-		int nl = 0;
+		Pnt* pl = points[lvl]; // points ptr of this level
+		int nl = 0; //point index
+
+		// initilize points (not pixel) of selected pixels, pass the u,v, type
 		for(int y=patternPadding+1;y<hl-patternPadding-2;y++)
 		for(int x=patternPadding+1;x<wl-patternPadding-2;x++)
 		{
 			//if(x==2) printf("y=%d!\n",y);
+			//   other level & point selected      first level & point valid
 			if((lvl!=0 && statusMapB[x+y*wl]) || (lvl==0 && statusMap[x+y*wl] != 0))
 			{
 				//assert(patternNum==9);
+				// pixel position
 				pl[nl].u = x+0.1;
 				pl[nl].v = y+0.1;
+
+				// init inverse depth !!! can modify
 				pl[nl].idepth = 1;
+				// ?
 				pl[nl].iR = 1;
 				pl[nl].isGood=true;
+
+				// pixel energy? // Vec2f (UenergyPhotometric, energyRegularizer)
+				// Hessian value at each point might represent the confidence or reliability of the depth estimate
 				pl[nl].energy.setZero();
 				pl[nl].lastHessian=0;
 				pl[nl].lastHessian_new=0;
-				pl[nl].my_type= (lvl!=0) ? 1 : statusMap[x+y*wl];
+				
+				// important
+				// first level: actual selected level
+				// other level: 1
+				pl[nl].my_type= (lvl!=0) ? 1 : statusMap[x+y*wl]; 
 
-				Eigen::Vector3f* cpt = firstFrame->dIp[lvl] + x + y*w[lvl];
-				float sumGrad2=0;
-				for(int idx=0;idx<patternNum;idx++)
-				{
+				Eigen::Vector3f* cpt = firstFrame->dIp[lvl] + x + y*w[lvl]; // <grayscale, dx, dy >current point
+
+				// calculate and accumulate gradient norm of each pixel inside a pattern arround the select pixel
+				// =================not used??? the outlierTH are set equally??? =============
+				float sumGrad2=0; // sumed gradient
+				for(int idx=0;idx<patternNum;idx++) //#define patternNum 8
+				{	
+					// #define patternP staticPattern[8]
 					int dx = patternP[idx][0];
 					int dy = patternP[idx][1];
-					float absgrad = cpt[dx + dy*w[lvl]].tail<2>().squaredNorm();
+					float absgrad = cpt[dx + dy*w[lvl]].tail<2>().squaredNorm(); // pixel in the pattern
 					sumGrad2 += absgrad;
 				}
+				// ================= end of not used =============
 
+				// sumGrad2 not used for derermine the outlier threshold?
 //				float gth = setting_outlierTH * (sqrtf(sumGrad2)+setting_outlierTHSumComponent);
 //				pl[nl].outlierTH = patternNum*gth*gth;
 //
 
-				pl[nl].outlierTH = patternNum*setting_outlierTH;
-
-
+				pl[nl].outlierTH = patternNum*setting_outlierTH; //float setting_outlierTH = 12*12;
 
 				nl++;
 				assert(nl <= npts);
 			}
 		}
 
-
+		// num of initialized points of the level
 		numPoints[lvl]=nl;
 	}
+
 	delete[] statusMap;
 	delete[] statusMapB;
 
+	// Pnt* pl = points[lvl]; for these initialized points 
+	// use kdtree to find 10 nearest points and 
+	// if not fiest level, save the parent and neighbors indices and distance
 	makeNN();
 
-	thisToNext=SE3();
-	snapped = false;
+	thisToNext=SE3(); // initialize 
+	snapped = false; //?
 	frameID = snappedAt = 0;
 
 	for(int i=0;i<pyrLevelsUsed;i++)
-		dGrads[i].setZero();
+		dGrads[i].setZero(); //?
 
 }
 
+// set point energy to 0
+// set idepth_new to current idepth
+// if is the coarest level, for the bad points, try to initialize depth using nn points
 void CoarseInitializer::resetPoints(int lvl)
 {
 	Pnt* pts = points[lvl];
@@ -897,25 +1057,27 @@ void CoarseInitializer::resetPoints(int lvl)
 		pts[i].energy.setZero();
 		pts[i].idepth_new = pts[i].idepth;
 
-
+		// coarest level bad points
 		if(lvl==pyrLevelsUsed-1 && !pts[i].isGood)
 		{
 			float snd=0, sn=0;
 			for(int n = 0;n<10;n++)
 			{
 				if(pts[i].neighbours[n] == -1 || !pts[pts[i].neighbours[n]].isGood) continue;
-				snd += pts[pts[i].neighbours[n]].iR;
-				sn += 1;
+				snd += pts[pts[i].neighbours[n]].iR; // sum of neighbor depth
+				sn += 1; // sum of neighbor number
 			}
 
 			if(sn > 0)
 			{
-				pts[i].isGood=true;
+				pts[i].isGood=true; 
 				pts[i].iR = pts[i].idepth = pts[i].idepth_new = snd/sn;
 			}
 		}
 	}
 }
+
+
 void CoarseInitializer::doStep(int lvl, float lambda, Vec8f inc)
 {
 
@@ -996,8 +1158,9 @@ void CoarseInitializer::makeK(CalibHessian* HCalib)
 }
 
 
-
-
+// use kdtree to find 10 nearest points
+// For each point, if it is not on the finest pyramid level, the nearest neighbor at above  level is found. 
+// This is termed as the "parent" of the current point.
 void CoarseInitializer::makeNN()
 {
 	const float NNDistFactor=0.05;
@@ -1047,7 +1210,7 @@ void CoarseInitializer::makeNN()
 				myidx++;
 			}
 			for(int k=0;k<nn;k++)
-				pts[i].neighboursDist[k] *= 10/sumDF;
+				pts[i].neighboursDist[k] *= 10/sumDF; // consider weight only?
 
 
 			if(lvl < pyrLevelsUsed-1 )

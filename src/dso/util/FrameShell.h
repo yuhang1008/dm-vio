@@ -38,29 +38,6 @@ class FrameShell
 {
 public:
 	EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
-	int id; 			// INTERNAL ID, starting at zero.
-	int incoming_id;	// ID passed into DSO
-	double timestamp;		// timestamp passed into DSO.
-
-	// set once after tracking
-	SE3 camToTrackingRef;
-	FrameShell* trackingRef;
-
-	// constantly adapted.
-	SE3 camToWorld;				// Write: TRACKING, while frame is still fresh; MAPPING: only when locked [shellPoseMutex].
-	AffLight aff_g2l;
-	bool poseValid;
-	bool trackingWasGood;
-
-	int keyframeId = -1; // Id of the KF or -1 for non-KFs.
-
-	// statisitcs
-	int statistics_outlierResOnThis;
-	int statistics_goodResOnThis;
-	int marginalizedAt;
-	double movedByOpt;
-
-    static boost::mutex shellPoseMutex;
 
 	inline FrameShell()
 	{
@@ -75,6 +52,30 @@ public:
 		trackingRef=0;
 		camToTrackingRef = SE3();
 	}
+
+	int id; 			// INTERNAL ID, starting at zero.
+	int incoming_id;	// ID passed into DSO
+	double timestamp;		// timestamp passed into DSO.
+
+	// set once after tracking
+	SE3 camToTrackingRef;
+	FrameShell* trackingRef;
+
+	// constantly adapted.
+	SE3 camToWorld;				// Write: TRACKING, while frame is still fresh; MAPPING: only when locked [shellPoseMutex].
+	AffLight aff_g2l;  // affine factor
+	bool poseValid;
+	bool trackingWasGood;
+
+	int keyframeId = -1; // Id of the KF or -1 for non-KFs.
+
+	// statisitcs
+	int statistics_outlierResOnThis;
+	int statistics_goodResOnThis;
+	int marginalizedAt;
+	double movedByOpt;
+
+    static boost::mutex shellPoseMutex;
 };
 
 

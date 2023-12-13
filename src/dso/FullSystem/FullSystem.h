@@ -155,8 +155,8 @@ public:
 	void debugPlot(std::string name);
 
 	void printFrameLifetimes();
+	
 	// contains pointers to active frames
-
     std::vector<IOWrap::Output3DWrapper*> outputWrapper;
 
 	bool isLost;

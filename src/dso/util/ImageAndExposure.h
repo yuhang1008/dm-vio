@@ -35,7 +35,7 @@ class ImageAndExposure
 {
 public:
 	EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
-	float* image;			// irradiance. between 0 and 256
+	float* image;			// grayscale. between 0 and 256
 	int w,h;				// width and height;
 	double timestamp;
 	float exposure_time;	// exposure time in ms.

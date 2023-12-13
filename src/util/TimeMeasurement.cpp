@@ -51,7 +51,7 @@ double dmvio::TimeMeasurement::end()
     auto end = high_resolution_clock::now();
     double duration = duration_cast<std::chrono::duration<double>>(end - begin).count();
 
-    logs[name].addMeasurement(duration);
+    logs[name].addMeasurement(duration); //logs is static variable
 
     ended = true;
 

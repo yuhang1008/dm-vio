@@ -161,11 +161,12 @@ typedef Eigen::Matrix<double,14,1> Vec14;
 
 
 
-
+// affine function
 // transforms points from one frame to another.
-struct AffLight
+struct AffLight 
 {
 	AffLight(double a_, double b_) : a(a_), b(b_) {};
+	
 	AffLight() : a(0), b(0) {};
 
 	// Affine Parameters:

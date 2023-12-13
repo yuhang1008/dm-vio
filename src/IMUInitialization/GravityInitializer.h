@@ -38,7 +38,7 @@ public:
     Sophus::SE3d addMeasure(const IMUData& imuData, const Sophus::SE3d& currToFirst);
 
 private:
-    int maxNumMeasurements; // Num of last gravity measurements to average.
+    int maxNumMeasurements; // 40 by default
     std::deque<Eigen::Vector3d> measures;
     Eigen::Vector3d gravity;
 };

@@ -111,31 +111,31 @@ void EnergyFunctional::setAdjointsF(CalibHessian* Hcalib)
 
 EnergyFunctional::EnergyFunctional(dmvio::BAGTSAMIntegration &gtsamIntegration) : gtsamIntegration(gtsamIntegration)
 {
-	adHost=0;
-	adTarget=0;
+    adHost=0;
+    adTarget=0;
 
+    red=0;
 
-	red=0;
+    adHostF=0;
+    adTargetF=0;
+    adHTdeltaF=0;
 
-	adHostF=0;
-	adTargetF=0;
-	adHTdeltaF=0;
+    nFrames = nResiduals = nPoints = 0;
 
-	nFrames = nResiduals = nPoints = 0;
-
-	HM = MatXX::Zero(CPARS,CPARS);
+    HM = MatXX::Zero(CPARS,CPARS);
     HMForGTSAM = MatXX::Zero(CPARS, CPARS);
-	bM = VecX::Zero(CPARS);
+    bM = VecX::Zero(CPARS);
     bMForGTSAM = VecX::Zero(CPARS);
 
 
-	accSSE_top_L = new AccumulatedTopHessianSSE();
-	accSSE_top_A = new AccumulatedTopHessianSSE();
-	accSSE_bot = new AccumulatedSCHessianSSE();
+    accSSE_top_L = new AccumulatedTopHessianSSE();
+    accSSE_top_A = new AccumulatedTopHessianSSE();
+    accSSE_bot = new AccumulatedSCHessianSSE();
 
-	resInA = resInL = resInM = 0;
-	currentLambda=0;
+    resInA = resInL = resInM = 0;
+    currentLambda=0;
 }
+
 EnergyFunctional::~EnergyFunctional()
 {
 	for(EFFrame* f : frames)

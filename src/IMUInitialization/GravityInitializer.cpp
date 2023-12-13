@@ -32,11 +32,14 @@ GravityInitializer::GravityInitializer(int numMeasurementsToUse, const IMUCalibr
     gravity = imuCalibration.gravity;
 }
 
-Sophus::SE3d
+
+Sophus::SE3d                // is a vector of multi data
 GravityInitializer::addMeasure(const IMUData& imuData, const Sophus::SE3d& currToFirst)
 {
     int numMeasure = 0;
     Eigen::Vector3d measure(0.0, 0.0, 0.0);
+
+// average gravity measurement, push to imu initialization measures
     for(int i = 0; i < imuData.size(); ++i)
     {
         Eigen::Vector3d curr = imuData[i].getAccData();
@@ -45,13 +48,16 @@ GravityInitializer::addMeasure(const IMUData& imuData, const Sophus::SE3d& currT
     }
     measure /= (double) numMeasure;
 
+    // note, measurement contains IMUData, not sigle IMU measurement
     measures.push_back(measure);
 
+// pop IMU measurement if too many
     if(measures.size() > maxNumMeasurements)
     {
         measures.pop_front();
     }
 
+// filtered measurement, from historical imu measurements
     Eigen::Vector3d filteredM(0.0, 0.0, 0.0);
     for(auto&& m : measures)
     {
@@ -59,15 +65,18 @@ GravityInitializer::addMeasure(const IMUData& imuData, const Sophus::SE3d& currT
     }
     filteredM /= (double) measures.size();
 
-    measure = filteredM;
+    measure = filteredM; // average of all inti measures
 
     Eigen::Quaterniond quat;
+    // q_measure_gravity
     quat.setFromTwoVectors(measure, -gravity);
 
-    Sophus::SE3d imuToWorld(quat, Eigen::Vector3d::Zero());
+    // T_world_imu
+    Sophus::SE3d imuToWorld(quat, Eigen::Vector3d::Zero()); //SE3
 
     return imuToWorld;
 }
+
 
 double dmvio::getGravityError(const Sophus::SE3d& imuToWorld, const Sophus::SE3d& imuToWorldGT)
 {

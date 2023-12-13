@@ -71,6 +71,17 @@ dmvio::MainSettings mainSettings;
 dmvio::IMUCalibration imuCalibration;
 dmvio::IMUSettings imuSettings;
 
+
+// from ChatGPT: Together, these 2 functions provide a way to gracefully handle the termination of a program in response to
+// a SIGINT signal, allowing for custom cleanup actions (such as printing a message) before exiting with an error status.
+
+// SIGINT is a signal in Unix-like operating systems, including Linux and macOS, that stands for "Signal Interrupt."
+
+// so the only function of the code provided is to show ctrl+c caught when the user press ctrl+c?
+
+// ChatGPT:
+// Yes, the main purpose of the code you provided is to catch and handle the Ctrl+C signal (SIGINT) when the user presses Ctrl+C in the terminal.
+
 void my_exit_handler(int s)
 {
     printf("Caught signal %d\n", s);
@@ -89,10 +100,6 @@ void exitThread()
 }
 
 
-
-
-
-
 void run(ImageFolderReader* reader, IOWrap::PangolinDSOViewer* viewer)
 {
 
@@ -103,10 +110,10 @@ void run(ImageFolderReader* reader, IOWrap::PangolinDSOViewer* viewer)
     }
 
 
-    int lstart = start;
-    int lend = end;
-    int linc = 1;
-    if(reverse)
+    int lstart = start; // start time?
+    int lend = end; // end time?
+    int linc = 1; // frame difference
+    if(reverse) // reverse to play the data (so strange)
     {
         assert(!setting_useIMU); // Reverse is not supported with IMU data at the moment!
         printf("REVERSE!!!!");
@@ -117,45 +124,60 @@ void run(ImageFolderReader* reader, IOWrap::PangolinDSOViewer* viewer)
         linc = -1;
     }
 
-
+    // playbackSpeed=0 for linearize (play as fast as possible, while sequentializing tracking & mapping). 
+    // otherwise, factor on timestamps.
     bool linearizeOperation = (mainSettings.playbackSpeed == 0);
 
-    if(linearizeOperation && setting_minFramesBetweenKeyframes < 0)
-    {
+    // if non realtime mode, can set minimum frames between key frames?
+    if(linearizeOperation && setting_minFramesBetweenKeyframes < 0) 
+    {   
+        //setting_minFramesBetweenKeyframes default is -0.5, set to 0.5?
         setting_minFramesBetweenKeyframes = -setting_minFramesBetweenKeyframes;
         std::cout << "Using setting_minFramesBetweenKeyframes=" << setting_minFramesBetweenKeyframes
                   << " because of non-realtime mode." << std::endl;
     }
 
+    // note, imucalibration is initilized already, and all related paras been set into settingsUtil
+    // imuSettings has many paras and also been set into settingsUtil
+    // above infos set to FullSystem
     FullSystem* fullSystem = new FullSystem(linearizeOperation, imuCalibration, imuSettings);
-    fullSystem->setGammaFunction(reader->getPhotometricGamma());
+    fullSystem->setGammaFunction(reader->getPhotometricGamma()); //gamma funcition created from reader
 
-
+    // visualization avaliable
     if(viewer != 0)
-    {
+    {   
+        //why push back?
+        // we found PangolinDSOViewer(class of viewer) and SampleOutputWrapper (calss of sampleOutPutWrapper)
+        // are all inheritet from Output3DWrapper
+        // probably, viewer is to display all related information
+        // while SampleOutputWrapper for 3d point cloud only
         fullSystem->outputWrapper.push_back(viewer);
     }
 
+    // warpper for print 3-d related informations
     std::unique_ptr<IOWrap::SampleOutputWrapper> sampleOutPutWrapper;
-    if(useSampleOutput)
+    if(useSampleOutput) // default is false
     {
         sampleOutPutWrapper.reset(new IOWrap::SampleOutputWrapper());
         fullSystem->outputWrapper.push_back(sampleOutPutWrapper.get());
     }
 
+    // so the system has one viewer and one sampleOutPutWrapper in the outputWrapper vector ?
+
+    // time for each frame to play at (start from zero), plackbackSpeed is considered
     std::vector<int> idsToPlay;
-    std::vector<double> timesToPlayAt;
+    std::vector<double> timesToPlayAt; // saved in this vector
     for(int i = lstart; i >= 0 && i < reader->getNumImages() && linc * i < linc * lend; i += linc)
     {
         idsToPlay.push_back(i);
-        if(timesToPlayAt.size() == 0)
+        if(timesToPlayAt.size() == 0) 
         {
-            timesToPlayAt.push_back((double) 0);
+            timesToPlayAt.push_back((double) 0); // start from 0
         }else
         {
             double tsThis = reader->getTimestamp(idsToPlay[idsToPlay.size() - 1]);
             double tsPrev = reader->getTimestamp(idsToPlay[idsToPlay.size() - 2]);
-            timesToPlayAt.push_back(timesToPlayAt.back() + fabs(tsThis - tsPrev) / mainSettings.playbackSpeed);
+            timesToPlayAt.push_back(timesToPlayAt.back() + fabs(tsThis - tsPrev) / mainSettings.playbackSpeed); //playbackSpeed=1 for prest is not 0
         }
     }
 
@@ -168,6 +190,7 @@ void run(ImageFolderReader* reader, IOWrap::PangolinDSOViewer* viewer)
         }
     }
 
+    // preload images
     std::vector<ImageAndExposure*> preloadedImages;
     if(mainSettings.preload)
     {
@@ -179,44 +202,53 @@ void run(ImageFolderReader* reader, IOWrap::PangolinDSOViewer* viewer)
         }
     }
 
-    struct timeval tv_start;
+    struct timeval tv_start; 
     gettimeofday(&tv_start, NULL);
     clock_t started = clock();
     double sInitializerOffset = 0;
 
+    // load ground truth data
     bool gtDataThere = reader->loadGTData(gtFile);
 
     bool imuDataSkipped = false;
-    dmvio::IMUData skippedIMUData;
+    dmvio::IMUData skippedIMUData;// skiped imu data because the frame is skiped
+
+
+    // main loop for dm-vio
     for(int ii = 0; ii < (int) idsToPlay.size(); ii++)
     {
         if(!fullSystem->initialized)    // if not initialized: reset start time.
         {
             gettimeofday(&tv_start, NULL);
             started = clock();
-            sInitializerOffset = timesToPlayAt[ii];
+            sInitializerOffset = timesToPlayAt[ii]; // update sInitializerOffset util useful timesToPlayAt (wrt starting time (0))
         }
 
-        int i = idsToPlay[ii];
+        int i = idsToPlay[ii]; // current image id
 
-
+        // read current image
         ImageAndExposure* img;
         if(mainSettings.preload)
             img = preloadedImages[ii];
         else
             img = reader->getImage(i);
 
-
         bool skipFrame = false;
-        if(mainSettings.playbackSpeed != 0)
+
+        // this if make sure data play as original time if mainSettings.playbackSpeed != 0
+        if(mainSettings.playbackSpeed != 0) //playbackSpeed=1 for prest is not 0, which will not be real-time
         {
             struct timeval tv_now;
             gettimeofday(&tv_now, NULL);
+
+            // sSinceStart is time wrt to first initialized frame
             double sSinceStart = sInitializerOffset + ((tv_now.tv_sec - tv_start.tv_sec) +
                                                        (tv_now.tv_usec - tv_start.tv_usec) / (1000.0f * 1000.0f));
 
+            //sleep for a while if data read too quick
             if(sSinceStart < timesToPlayAt[ii])
                 usleep((int) ((timesToPlayAt[ii] - sSinceStart) * 1000 * 1000));
+                                                // plus a stange threshold
             else if(sSinceStart > timesToPlayAt[ii] + 0.5 + 0.1 * (ii % 2))
             {
                 printf("SKIPFRAME %d (play at %f, now it is %f)!\n", ii, timesToPlayAt[ii], sSinceStart);
@@ -224,6 +256,7 @@ void run(ImageFolderReader* reader, IOWrap::PangolinDSOViewer* viewer)
             }
         }
 
+        // read gt data
         dmvio::GTData data;
         bool found = false;
         if(gtDataThere)
@@ -231,19 +264,26 @@ void run(ImageFolderReader* reader, IOWrap::PangolinDSOViewer* viewer)
             data = reader->getGTData(i, found);
         }
 
+        // read imu data associated to the frame
         std::unique_ptr<dmvio::IMUData> imuData;
+        //only read imu data when useIMU is set true
         if(setting_useIMU)
         {
             imuData = std::make_unique<dmvio::IMUData>(reader->getIMUData(i));
         }
+        
         if(!skipFrame)
-        {
+        {   
+        
             if(imuDataSkipped && imuData)
-            {
+            {   
+                // insert IMU data that is skipped with the skipped frame
                 imuData->insert(imuData->begin(), skippedIMUData.begin(), skippedIMUData.end());
                 skippedIMUData.clear();
                 imuDataSkipped = false;
             }
+            // addActiveFrame is a very important function 
+            // variables: image, id, IMUData from last until this image?, gtdata(optional)
             fullSystem->addActiveFrame(img, i, imuData.get(), (gtDataThere && found) ? &data : 0);
             if(gtDataThere && found && !disableAllDisplay)
             {
@@ -259,13 +299,13 @@ void run(ImageFolderReader* reader, IOWrap::PangolinDSOViewer* viewer)
         delete img;
 
         if(fullSystem->initFailed || setting_fullResetRequested)
-        {
+        {   //?
             if(ii < 250 || setting_fullResetRequested)
             {
                 printf("RESETTING!\n");
                 std::vector<IOWrap::Output3DWrapper*> wraps = fullSystem->outputWrapper;
                 delete fullSystem;
-                for(IOWrap::Output3DWrapper* ow : wraps) ow->reset();
+                for(IOWrap::Output3DWrapper* ow : wraps) ow->reset(); //?
 
                 fullSystem = new FullSystem(linearizeOperation, imuCalibration, imuSettings);
                 fullSystem->setGammaFunction(reader->getPhotometricGamma());
@@ -274,6 +314,7 @@ void run(ImageFolderReader* reader, IOWrap::PangolinDSOViewer* viewer)
                 setting_fullResetRequested = false;
             }
         }
+
 
         if(viewer != nullptr && viewer->shouldQuit())
         {
@@ -287,7 +328,8 @@ void run(ImageFolderReader* reader, IOWrap::PangolinDSOViewer* viewer)
             break;
         }
 
-    }
+    } // end of main loop
+
     fullSystem->blockUntilMappingIsFinished();
     clock_t ended = clock();
     struct timeval tv_end;
@@ -345,6 +387,7 @@ void run(ImageFolderReader* reader, IOWrap::PangolinDSOViewer* viewer)
     printf("EXIT NOW!\n");
 }
 
+
 int main(int argc, char** argv)
 {
     setlocale(LC_ALL, "C");
@@ -357,9 +400,9 @@ int main(int argc, char** argv)
 
     auto settingsUtil = std::make_shared<dmvio::SettingsUtil>();
 
-    // Create Settings files.
-    imuSettings.registerArgs(*settingsUtil);
-    imuCalibration.registerArgs(*settingsUtil);
+    // register default values to settingsUtil
+    imuSettings.registerArgs(*settingsUtil); //this is actually the system setting, not imu setting
+    imuCalibration.registerArgs(*settingsUtil); // IMU calibration setting
     mainSettings.registerArgs(*settingsUtil);
 
     // Dataset specific arguments. For other commandline arguments check out MainSettings::parseArgument,
@@ -392,24 +435,34 @@ int main(int argc, char** argv)
     }
 
     // hook crtl+C.
+    // This line creates a new Boost.Thread object named exThread and initializes it with a thread that runs the exitThread function. 
+    // the only function of the code provided is to show ctrl+c caught when the user press ctrl+c 
     boost::thread exThread = boost::thread(exitThread);
 
+    // read image from zip files and push the names to variable 'files'
+    // load timestamps and exposure times, as well as ids
+    //                                             image_folder calibration_file   gama_calib_file            vignette_file         ??
     ImageFolderReader* reader = new ImageFolderReader(source, mainSettings.calib, mainSettings.gammaCalib, mainSettings.vignette, use16Bit);
+    // load IMU data 
     reader->loadIMUData(imuFile);
+    // set camera parameters as well as pyramid parameters!
     reader->setGlobalCalibration();
 
+
     if(!disableAllDisplay)
-    {
+    {   
+        // inita viewer                                              wG[0] = w;  hG[0] = h;
         IOWrap::PangolinDSOViewer* viewer = new IOWrap::PangolinDSOViewer(wG[0], hG[0], false, settingsUtil,
                                                                           nullptr);
 
+        // boost::thread constructor expects a callable object with no arguments, so use bind to pass the arguments
         boost::thread runThread = boost::thread(boost::bind(run, reader, viewer));
 
         viewer->run();
 
         delete viewer;
 
-        // Make sure that the destructor of FullSystem, etc. finishes, so all log files are properly flushed.
+        // This call makes sure the main thread waits for the runThread to finish before moving on. 
         runThread.join();
     }else
     {

@@ -52,13 +52,15 @@ public:
 	float idepth;
 	bool isGood;
 	Vec2f energy;		// (UenergyPhotometric, energyRegularizer)
-	bool isGood_new;
+
 	float idepth_new;
+	bool isGood_new;
 	Vec2f energy_new;
 
-	float iR;
+	float iR; // inverse regulated? use neighbor points' inverse-depth
 	float iRSumNum;
 
+	// Hessian value at each point might represent the confidence or reliability of the depth estimate
 	float lastHessian;
 	float lastHessian_new;
 
@@ -122,12 +124,14 @@ private:
 	Eigen::Vector3f* dINew[PYR_LEVELS];
 	Eigen::Vector3f* dIFist[PYR_LEVELS];
 
-	Eigen::DiagonalMatrix<float, 8> wM;
+	Eigen::DiagonalMatrix<float, 8> wM; // 8x8
 
 	// temporary buffers for H and b.
 	Vec10f* JbBuffer;			// 0-7: sum(dd * dp). 8: sum(res*dd). 9: 1/(1+sum(dd*dd))=inverse hessian entry.
 	Vec10f* JbBuffer_new;
 
+	// the following 2 are accumulators to accelerate the accumulation, worker thread?
+			// typename 		size
     std::array<Accumulator11, NUM_THREADS> accE;
 	std::array<Accumulator9, NUM_THREADS> acc9s; // one acc for each worker thread.
 	Accumulator9 acc9SC;

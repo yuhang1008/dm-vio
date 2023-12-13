@@ -57,7 +57,7 @@ public:
     // Note that the vignette will only be used if set to 0.
     int mode = 0;
 
-    void settingsDefault(int preset);
+    void settingsDefault(int preset);  //pase defalt settings to class
 };
 
 }

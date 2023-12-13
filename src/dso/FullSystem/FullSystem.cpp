@@ -78,9 +78,11 @@ FullSystem::FullSystem(bool linearizeOperationPassed, const dmvio::IMUCalibratio
                      shellPoseMutex(FrameShell::shellPoseMutex)
 {
     setting_useGTSAMIntegration = setting_useIMU;
+	// why need to use GTSAM one?
     baIntegration = imuIntegration.getBAGTSAMIntegration().get();
 
 	int retstat =0;
+	// init many streams to write log files
 	if(setting_logStuff)
 	{
 
@@ -142,9 +144,10 @@ FullSystem::FullSystem(bool linearizeOperationPassed, const dmvio::IMUCalibratio
 	assert(retstat!=293847);
 
 
-
+	// image viewer?
 	selectionMap = new float[wG[0]*hG[0]];
 
+	// 
 	coarseDistanceMap = new CoarseDistanceMap(wG[0], hG[0]);
 	coarseTracker = new CoarseTracker(wG[0], hG[0], imuIntegration);
 	coarseTracker_forNewKF = new CoarseTracker(wG[0], hG[0], imuIntegration);
@@ -165,8 +168,9 @@ FullSystem::FullSystem(bool linearizeOperationPassed, const dmvio::IMUCalibratio
 	currentMinActDist=2;
 	initialized=false;
 
-
+	// very important
 	ef = new EnergyFunctional(*baIntegration);
+	// for what?
 	ef->red = &this->treadReduce;
 
 	isLost=false;
@@ -178,8 +182,6 @@ FullSystem::FullSystem(bool linearizeOperationPassed, const dmvio::IMUCalibratio
 	mappingThread = boost::thread(&FullSystem::mappingLoop, this);
 	lastRefStopID=0;
 
-
-
 	minIdJetVisDebug = -1;
 	maxIdJetVisDebug = -1;
 	minIdJetVisTracker = -1;
@@ -188,7 +190,7 @@ FullSystem::FullSystem(bool linearizeOperationPassed, const dmvio::IMUCalibratio
 
 FullSystem::~FullSystem()
 {
-	blockUntilMappingIsFinished();
+	blockUntilMappingIsFinished(); //?
 
 	if(setting_logStuff)
 	{
@@ -228,7 +230,7 @@ void FullSystem::setGammaFunction(float* BInv)
 {
 	if(BInv==0) return;
 
-	// copy BInv.
+	// copy BInv. (float[256])
 	memcpy(Hcalib.Binv, BInv, sizeof(float)*256);
 
 
@@ -878,55 +880,89 @@ void FullSystem::flagPointsForRemoval()
 
 }
 
-// The function is passed the IMU-data from the previous frame until the current frame.
+// The function is passed the image, IMU-data from the previous frame until the current frame. gtdata is optional
 void FullSystem::addActiveFrame(ImageAndExposure* image, int id, dmvio::IMUData* imuData, dmvio::GTData* gtData)
 {
-    // Measure Time of the time measurement.
+    // Measure Time of the time measurement. these four line seems to be useless
     dmvio::TimeMeasurement timeMeasurementMeasurement("timeMeasurement");
     dmvio::TimeMeasurement timeMeasurementZero("zero");
     timeMeasurementZero.end();
     timeMeasurementMeasurement.end();
 
+
     dmvio::TimeMeasurement timeMeasurement("addActiveFrame");
-	boost::unique_lock<boost::mutex> lock(trackMutex);
+	boost::unique_lock<boost::mutex> lock(trackMutex); // for locking current thread (run)
 
 
 	dmvio::TimeMeasurement measureInit("initObjectsAndMakeImage");
-	// =========================== add into allFrameHistory =========================
-	FrameHessian* fh = new FrameHessian();
-	FrameShell* shell = new FrameShell();
-	shell->camToWorld = SE3(); 		// no lock required, as fh is not used anywhere yet.
-	shell->aff_g2l = AffLight(0,0);
-    shell->marginalizedAt = shell->id = allFrameHistory.size();
-    shell->timestamp = image->timestamp;
-    shell->incoming_id = id;
-	fh->shell = shell;
-	allFrameHistory.push_back(shell);
 
+	// =========================== add into allFrameHistory =========================
+	FrameShell* shell = new FrameShell(); // contains frame information, lightweight, see below
+	shell->camToWorld = SE3(); 		// no lock required, as fh is not used anywhere yet.
+	shell->aff_g2l = AffLight(0,0); // affine factors for this frame, init to zero
+    shell->marginalizedAt = shell->id = allFrameHistory.size();
+    shell->timestamp = image->timestamp; //set shell id
+    shell->incoming_id = id;
+	allFrameHistory.push_back(shell); // shell is lightweight, doesn't contain points, so can be pushed back
+
+	// fh -> shell
+	FrameHessian* fh = new FrameHessian(); // short name of frame handler? contains points and frame shell
+	fh->shell = shell;
 
     // =========================== make Images / derivatives etc. =========================
 	fh->ab_exposure = image->exposure_time;
-	fh->makeImages(image->image, &Hcalib);
+
+	// make the following variables:
+		// dIp[i] = new Eigen::Vector3f[wG[i]*hG[i]];  which saves grayscale, dx, dy
+		// absSquaredGrad[i] = new float[wG[i]*hG[i]]; which saves the absolute squared gradient of the pixel
+	fh->makeImages(image->image, &Hcalib); 
 
     measureInit.end();
 
 	if(!initialized)
 	{
-		// use initializer!
-		if(coarseInitializer->frameID<0)	// first frame set. fh is kept by coarseInitializer.
+		// use initializer for the first frame
+		// coarseInitializer belongs to fullsystem
+		if(coarseInitializer->frameID<0)	// set first frame. fh is kept by coarseInitializer.
 		{
             // Only in this case no IMU-data is accumulated for the BA as this is the first frame.
 		    dmvio::TimeMeasurement initMeasure("InitializerFirstFrame");
+
+			// at first frame:
+			// make calibration paras
+			// in all levels, select feature pixels based on grayscale and gradient change:
+				// at the first level:
+				// make image histogram, feature pixel selection based on grayscale in different levels
+				// stores the result in map_out, which indicate which level the pixel is selected: enum PixelSelectorStatus {PIXSEL_VOID=0, PIXSEL_1, PIXSEL_2, PIXSEL_3};
+				// return number of pixel that is selected
+
+				// at other levels
+				// statusMapB will save the It only marks which pixels are selected based on having the highest gradient magnitude 
+				// in any of the considered directions (XX, YY, XY, YX) within their respective grid cells (size determined by pot).
+				// return  number of selected pixels
+				// will do this -coarse-to-fine recrusively	based on the density desired	
+
+				// Pnt* pl = points[lvl]; for these initialized points 
+				// use kdtree to find 10 nearest points and 
+				// if not fiest level, save the parent and neighbors indices and distance
 			coarseInitializer->setFirst(&Hcalib, fh);
+			
             if(setting_useIMU)
-            {
-                gravityInit.addMeasure(*imuData, Sophus::SE3d());
+            {	
+				// add imu measurement to measures: measures.push_back(measure)
+				// note imuData is all datas assocaiated to current frame
+                gravityInit.addMeasure(*imuData, Sophus::SE3d()); 
             }
-            for(IOWrap::Output3DWrapper* ow : outputWrapper)
-                ow->publishSystemStatus(dmvio::VISUAL_INIT);
-        }else
-        {
+
+            for(IOWrap::Output3DWrapper* ow : outputWrapper) // in each wrapper
+                ow->publishSystemStatus(dmvio::VISUAL_INIT); // when update rendering, need to lock the thread (why?)
+
+        }
+		// not the first frame
+		else
+        {	
             dmvio::TimeMeasurement initMeasure("InitializerOtherFrames");
+			// remember this has first frame already
 			bool initDone = coarseInitializer->trackFrame(fh, outputWrapper);
 			if(setting_useIMU)
 			{
@@ -1121,6 +1157,8 @@ void FullSystem::addActiveFrame(ImageAndExposure* image, int id, dmvio::IMUData*
 		return;
 	}
 }
+
+
 void FullSystem::deliverTrackedFrame(FrameHessian* fh, bool needKF)
 {
     dmvio::TimeMeasurement timeMeasurement("deliverTrackedFrame");

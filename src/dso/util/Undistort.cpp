@@ -40,13 +40,6 @@
 namespace dso
 {
 
-
-
-
-
-
-
-
 PhotometricUndistorter::PhotometricUndistorter(
 		std::string file,
 		std::string noiseImage,
@@ -177,6 +170,7 @@ PhotometricUndistorter::PhotometricUndistorter(
 	printf("Successfully read photometric calibration!\n");
 	valid = true;
 }
+
 PhotometricUndistorter::~PhotometricUndistorter()
 {
 	if(vignetteMap != 0) delete[] vignetteMap;
@@ -585,6 +579,8 @@ void Undistort::applyBlurNoise(float* img) const
 	delete[] noiseMapY;
 }
 
+//this function appears to be responsible for finding an optimal cropping region
+// for an image after accounting for lens distortion.
 void Undistort::makeOptimalK_crop()
 {
 	printf("finding CROP optimal new model!\n");
@@ -715,9 +711,9 @@ void Undistort::makeOptimalK_full()
 
 void Undistort::readFromFile(const char* configFileName, int nPars, std::string prefix)
 {
-	photometricUndist=0;
-	valid = false;
-	passthrough=false;
+	photometricUndist=0; 
+	valid = false; //?
+	passthrough=false; //?
 	remapX = 0;
 	remapY = 0;
 	
@@ -737,7 +733,7 @@ void Undistort::readFromFile(const char* configFileName, int nPars, std::string 
     std::getline(infile,l4);
 
     // l1 & l2
-    if(nPars == 5) // fov model
+    if(nPars == 5) // pinhole fov model
 	{
 		char buf[1000];
 		snprintf(buf, 1000, "%s%%lf %%lf %%lf %%lf %%lf", prefix.c_str());
@@ -807,7 +803,7 @@ void Undistort::readFromFile(const char* configFileName, int nPars, std::string 
 
 
 
-	// l3
+	// l3 rectify is for what??
 	if(l3 == "crop")
 	{
 		outputCalibration[0] = -1;
@@ -1003,7 +999,6 @@ void UndistortFOV::distortCoordinates(float* in_x, float* in_y, float* out_x, fl
 		out_y[i] = iy;
 	}
 }
-
 
 
 

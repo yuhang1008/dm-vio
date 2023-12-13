@@ -72,6 +72,7 @@ public:
 	void run();
 	void close();
 
+	// not defined
 	void addImageToDisplay(std::string name, MinimalImageB3* image);
 	void clearAllImagesToDisplay();
 
@@ -85,7 +86,7 @@ public:
 
     void addGTCamPose(const Sophus::SE3& gtPose);
 
-    virtual void pushLiveFrame(FrameHessian* image) override;
+    virtual void pushLiveFrame(FrameHessian* image) override; // current image?
     virtual void pushDepthImage(MinimalImageB3* image) override;
     virtual bool needPushDepthImage() override;
 
@@ -126,7 +127,6 @@ private:
 	std::vector<GraphConnection,Eigen::aligned_allocator<GraphConnection>> connections;
 
 
-
 	// render settings
 	bool settings_showKFCameras;
 	bool settings_showCurrentCamera;
@@ -146,7 +146,7 @@ private:
 	struct timeval last_track;
 	struct timeval last_map;
 
-
+	// for saving map time
 	std::deque<float> lastNTrackingMs;
 	std::deque<float> lastNMappingMs;
 

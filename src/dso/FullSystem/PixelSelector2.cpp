@@ -44,9 +44,8 @@ PixelSelector::PixelSelector(int w, int h)
 {
 	randomPattern = new unsigned char[w*h];
 	std::srand(3141592);	// want to be deterministic.
+	// generate random pattern between 0 and 255 for all pixel positions
 	for(int i=0;i<w*h;i++) randomPattern[i] = rand() & 0xFF;
-
-	currentPotential=3;
 
 	// We create 32 blocks in width dimension, and adjust the number of blocks for the height accordingly.
     // Always use block size of 16.
@@ -62,11 +61,12 @@ PixelSelector::PixelSelector(int w, int h)
 
     std::cout << "PixelSelector: Using block sizes: " << bW << ", " << bH << '\n';
 
-	gradHist = new int[100*(1+nbW)*(1+nbH)];
+	// for what? why this size?
+	gradHist = new int[100*(1+nbW)*(1+nbH)]; 
 	ths = new float[(nbW)*(nbH)+100];
 	thsSmoothed = new float[(nbW)*(nbH)+100];
 
-
+	currentPotential=3; // ?
 	allowFast=false;
 	gradHistFrame=0;
 }
@@ -79,18 +79,25 @@ PixelSelector::~PixelSelector()
 	delete[] thsSmoothed;
 }
 
+// The computeHistQuantil function is designed to find a threshold (quantile) 
+// in a histogram such that a certain percentage (here below=50%) of the data lies below this threshold.
+// return to the bin index of the histogram
 int computeHistQuantil(int* hist, float below)
-{
-	int th = hist[0]*below+0.5f;
+{	
+	// note: hist[0] is the total count of data
+	int th = hist[0]*below+0.5f; // # of points below below
 	for(int i=0;i<90;i++)
 	{
 		th -= hist[i+1];
-		if(th<0) return i;
+		if(th<0) return i; // bin index that # of points below below
 	}
 	return 90;
 }
 
-
+// operate on the first level
+// ths stores the bin index that certain percentage of the data lies below the ratio at a block, add the setting_minGradHistAdd
+// thsSmoothed stores a weighted average of threshold values (ths) of the current block and its surrounding blocks (neighbors) is computed.
+// 			The weight appears to be uniform across neighbors. The square of this average is then stored in thsSmoothed.
 void PixelSelector::makeHists(const FrameHessian* const fh)
 {
 	gradHistFrame = fh;
@@ -99,31 +106,48 @@ void PixelSelector::makeHists(const FrameHessian* const fh)
 	int w = wG[0];
 	int h = hG[0];
 
+	// num of blocks along width and height
 	int w32 = nbW;
 	int h32 = nbH;
 	thsStep = w32;
 
+	// in each block
 	for(int y=0;y<h32;y++)
 		for(int x=0;x<w32;x++)
 		{
 			float* map0 = mapmax0+bW*x+bH*y*w;
+			// gradHist = new int[100*(1+nbW)*(1+nbH)]; 
 			int* hist0 = gradHist;// + 50*(x+y*w32);
-			memset(hist0,0,sizeof(int)*50);
-
+			memset(hist0,0,sizeof(int)*50); // The histogram hist0 is initialized to zeros. initializes only the first 50 bins to zero. The code provided doesn't show what happens with the remaining bins,
+			// inside a block
 			for(int j=0;j<bH;j++) for(int i=0;i<bW;i++)
-			{
-				int it = i+bW*x;
+			{	
+				// actuall pixel
+				int it = i+bW*x; 
 				int jt = j+bH*y;
+				// If the pixel is on the boundary of the image, it's skipped.
 				if(it>w-2 || jt>h-2 || it<1 || jt<1) continue;
+				// compute the abs grayscale
 				int g = sqrtf(map0[i+j*w]);
-				if(g>48) g=48;
-				hist0[g+1]++;
-				hist0[0]++;
-			}
+				if(g>48) 
+				{g=48;}
 
-			ths[x+y*w32] = computeHistQuantil(hist0,setting_minGradHistCut) + setting_minGradHistAdd;
+				// add into the histogram
+				hist0[g+1]++; // 1-49
+				hist0[0]++; //total
+			}
+			//ths = new float[(nbW)*(nbH)+100];
+			//ths will stores the bin index that:
+							// bin index of histogram at where
+							// certain percentage of the data lies 
+							// below this threshold, which is
+							// setting_minGradHistCut = 0.5				  +   // add some bin index
+			ths[x+y*w32] = computeHistQuantil(hist0,setting_minGradHistCut) + setting_minGradHistAdd; //float setting_minGradHistAdd = 7;
 		}
 
+
+	// A weighted average of threshold values (ths) of the current block and its surrounding blocks (neighbors) is computed.
+	// The weight appears to be uniform across neighbors. The square of this average is then stored in thsSmoothed.
 	for(int y=0;y<h32;y++)
 		for(int x=0;x<w32;x++)
 		{
@@ -149,21 +173,27 @@ void PixelSelector::makeHists(const FrameHessian* const fh)
 			thsSmoothed[x+y*w32] = (sum/num) * (sum/num);
 
 		}
-
-
-
-
-
 }
-int PixelSelector::makeMaps(
-		const FrameHessian* const fh,
-		float* map_out, float density, int recursionsLeft, bool plot, float thFactor)
-{
-	float numHave=0;
-	float numWant=density;
-	float quotia;
-	int idealPotential = currentPotential;
 
+
+// make image histogram, feature pixel selection based on grascale in different levels
+// this is a recrusive function
+// stores the result in map_out, which indicate which level the pixel is selected: enum PixelSelectorStatus {PIXSEL_VOID=0, PIXSEL_1, PIXSEL_2, PIXSEL_3};
+// return number of pixel that is selected
+int PixelSelector::makeMaps(
+		const FrameHessian* const fh, // frame handler
+		float* map_out, //  an output map where the selected pixels are marked.
+		float density, // Target pixel density.
+		int recursionsLeft, // Allows for recursive resampling. 1 be default
+		bool plot, 
+		float thFactor)
+{
+	float numHave=0; // Number of currently selected pixels.
+	float numWant=density; // Desired number of pixels.
+	float quotia; //  Ratio of desired to current number of pixels.
+	int idealPotential = currentPotential; // Potential ideal pixel density.
+
+// FAST Pixel Selection (commented out)
 
 //	if(setting_pixelSelectionUseFast>0 && allowFast)
 //	{
@@ -188,28 +218,39 @@ int PixelSelector::makeMaps(
 //		quotia = numWant / numHave;
 //	}
 //	else
+
 	{
-
-
-
 
 		// the number of selected pixels behaves approximately as
 		// K / (pot+1)^2, where K is a scene-dependent constant.
 		// we will allow sub-selecting pixels by up to a quotia of 0.25, otherwise we will re-select.
 
-		if(fh != gradHistFrame) makeHists(fh);
 
-		// select!
+		// save these data in the fullsystem->pixelselector
+		// note: all on the first level
+		// int* gradHist; // saves the histogram of grascale in each block over the img, each block is divided into 50 bins, bin saves the number pixels fal into the range
+		// float* ths; // certain percentage of the data lies below the threshold
+		// float* thsSmoothed; // smooth above data using neighbor index
+		if(fh != gradHistFrame) makeHists(fh); // only make once, not in recrusive
+
+	// select pixels that exceeding the average threshold, stores the result in map_out, which indicate which level the pixel is selected: enum PixelSelectorStatus {PIXSEL_VOID=0, PIXSEL_1, PIXSEL_2, PIXSEL_3};
+		// return the numbers of pixel selected in each level Eigen::Vector3i(n2,n3,n4);
 		Eigen::Vector3i n = this->select(fh, map_out,currentPotential, thFactor);
 
-		// sub-select!
-		numHave = n[0]+n[1]+n[2];
+	// sub-select!
+		numHave = n[0]+n[1]+n[2]; // num of selected points
 		quotia = numWant / numHave;
 
 		// by default we want to over-sample by 40% just to be sure.
 		float K = numHave * (currentPotential+1) * (currentPotential+1);
 		idealPotential = sqrtf(K/numWant)-1;	// round down.
 		if(idealPotential<1) idealPotential=1;
+
+
+	// resample operations
+	// If it has too many pixels, it reduces the currentPotential.
+    // If it has too few pixels, it increases the currentPotential.
+	// In both cases, the function is recursively called with the updated potential.
 
 		if( recursionsLeft>0 && quotia > 1.25 && currentPotential>1)
 		{
@@ -239,12 +280,14 @@ int PixelSelector::makeMaps(
 	//				currentPotential,
 	//				idealPotential);
 			currentPotential = idealPotential;
-			return makeMaps(fh,map_out, density, recursionsLeft-1, plot,thFactor);
+			return makeMaps(fh, map_out, density, recursionsLeft-1, plot,thFactor);
 
 		}
 	}
 
 	int numHaveSub = numHave;
+
+	// if(quotia < 0.95), means too many points been selected, need to do subsampling
 	if(quotia < 0.95)
 	{
 		int wh=wG[0]*hG[0];
@@ -271,7 +314,6 @@ int PixelSelector::makeMaps(
 //			idealPotential,
 //			100*numHaveSub/(float)(wG[0]*hG[0]));
 	currentPotential = idealPotential;
-
 
 	if(plot)
 	{
@@ -300,20 +342,24 @@ int PixelSelector::makeMaps(
 				else if(map_out[i] == 4)
 					img.setPixelCirc(x,y,Vec3b(0,0,255));
 			}
+
+
+
 		IOWrap::displayImage("Selector Pixels", &img);
 	}
 
 	return numHaveSub;
 }
 
-
-
+// select pixels that exceeding the average threshold, stores the result in map_out, which indicate which level the pixel is selected: enum PixelSelectorStatus {PIXSEL_VOID=0, PIXSEL_1, PIXSEL_2, PIXSEL_3};
+// return the numbers of pixel selected in each level Eigen::Vector3i(n2,n3,n4);
 Eigen::Vector3i PixelSelector::select(const FrameHessian* const fh,
 		float* map_out, int pot, float thFactor)
 {
 
-	Eigen::Vector3f const * const map0 = fh->dI;
+	Eigen::Vector3f const * const map0 = fh->dI;  //dI = dIp[0] 
 
+	// abs squared gradiant at different level
 	float * mapmax0 = fh->absSquaredGrad[0];
 	float * mapmax1 = fh->absSquaredGrad[1];
 	float * mapmax2 = fh->absSquaredGrad[2];
@@ -324,9 +370,9 @@ Eigen::Vector3i PixelSelector::select(const FrameHessian* const fh,
 	int w2 = wG[2];
 	int h = hG[0];
 
-
+	// 16 directions?
 	const Vec2f directions[16] = {
-	         Vec2f(0,    1.0000),
+	         Vec2f(0,    	  1.0000),
 	         Vec2f(0.3827,    0.9239),
 	         Vec2f(0.1951,    0.9808),
 	         Vec2f(0.9239,    0.3827),
@@ -343,15 +389,17 @@ Eigen::Vector3i PixelSelector::select(const FrameHessian* const fh,
 	         Vec2f(1.0000,    0.0000),
 	         Vec2f(0.1951,   -0.9808)};
 
+	// let map_out save pixel statas, initilize with zero+
 	memset(map_out,0,w*h*sizeof(PixelSelectorStatus));
 
 
+	float dw1 = setting_gradDownweightPerLevel; // settings.cpp setting_gradDownweightPerLevel = 0.75;
+	float dw2 = dw1*dw1; // squared level
 
-	float dw1 = setting_gradDownweightPerLevel;
-	float dw2 = dw1*dw1;
 
-
-	int n3=0, n2=0, n4=0;
+	int n2=0, n3=0, n4=0;
+	// pot: potential = 3
+	// coarse to fine
 	for(int y4=0;y4<h;y4+=(4*pot)) for(int x4=0;x4<w;x4+=(4*pot))
 	{
 		int my3 = std::min((4*pot), h-y4);
@@ -382,19 +430,22 @@ Eigen::Vector3i PixelSelector::select(const FrameHessian* const fh,
 					int xf = x1+x234;
 					int yf = y1+y234;
 
-					if(xf<4 || xf>=w-5 || yf<4 || yf>h-4) continue;
+					if(xf<4 || xf>=w-5 || yf<4 || yf>h-4) continue; // don't care boundary points
 
-
-                    float pixelTH0 = thsSmoothed[xf / bW + (yf / bH) * thsStep];
+					
+                    float pixelTH0 = thsSmoothed[xf / bW + (yf / bH) * thsStep]; //thsStep = w32 = nbW
 					float pixelTH1 = pixelTH0*dw1;
 					float pixelTH2 = pixelTH1*dw2;
 
+					// Calculates pixel thresholds pixelTH0, pixelTH1, and pixelTH2 based on smoothed gradient thresholds and downweighting factors.
+					// If the magnitude exceeds the threshold, the pixel is considered a candidate. The directionality of the gradient is optionally considered, and a direction norm is computed.
 
+					// float * mapmax0 = fh->absSquaredGrad[0]; thFactor=1 by default
 					float ag0 = mapmax0[idx];
 					if(ag0 > pixelTH0*thFactor)
 					{
-						Vec2f ag0d = map0[idx].tail<2>();
-						float dirNorm = fabsf((float)(ag0d.dot(dir2)));
+						Vec2f ag0d = map0[idx].tail<2>(); // dx and dy
+						float dirNorm = fabsf((float)(ag0d.dot(dir2))); // cos theta
 						if(!setting_selectDirectionDistribution) dirNorm = ag0;
 
 						if(dirNorm > bestVal2)
@@ -402,6 +453,7 @@ Eigen::Vector3i PixelSelector::select(const FrameHessian* const fh,
 					}
 					if(bestIdx3==-2) continue;
 
+					// coares level
 					float ag1 = mapmax1[(int)(xf*0.5f+0.25f) + (int)(yf*0.5f+0.25f)*w1];
 					if(ag1 > pixelTH1*thFactor)
 					{
@@ -414,6 +466,7 @@ Eigen::Vector3i PixelSelector::select(const FrameHessian* const fh,
 					}
 					if(bestIdx4==-2) continue;
 
+					// coareser level
 					float ag2 = mapmax2[(int)(xf*0.25f+0.125) + (int)(yf*0.25f+0.125)*w2];
 					if(ag2 > pixelTH2*thFactor)
 					{
@@ -430,6 +483,9 @@ Eigen::Vector3i PixelSelector::select(const FrameHessian* const fh,
 				{
 					map_out[bestIdx2] = 1;
 					bestVal3 = 1e10;
+					// once feature point detected at n2 level(what is this?)
+					// will lead to change the direction for detecting the best gradient
+					// see above, Vec2f dirx = directions[randomPattern[n2] & 0xF]; all depend on n2
 					n2++;
 				}
 			}
@@ -444,11 +500,10 @@ Eigen::Vector3i PixelSelector::select(const FrameHessian* const fh,
 
 		if(bestIdx4>0)
 		{
-			map_out[bestIdx4] = 4;
+			map_out[bestIdx4] = 4; //?
 			n4++;
 		}
 	}
-
 
 	return Eigen::Vector3i(n2,n3,n4);
 }

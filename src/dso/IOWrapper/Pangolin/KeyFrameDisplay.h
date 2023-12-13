@@ -49,8 +49,8 @@ struct InputPointSparse
 	float u;
 	float v;
 	float idpeth;
-	float idepth_hessian;
-	float relObsBaseline;
+	float idepth_hessian; //?
+	float relObsBaseline; //?
 	int numGoodRes;
 	unsigned char color[ppp];
 	unsigned char status;
@@ -75,7 +75,7 @@ public:
 	// keeping some additional information so we can render it differently.
 	void setFromKF(FrameHessian* fh, CalibHessian* HCalib);
 
-	// copies points from KF over to internal buffer,
+	// copies points from KF over to internal buffer, shell has Hessian
 	// keeping some additional information so we can render it differently.
 	void setFromF(FrameShell* fs, CalibHessian* HCalib);
 
@@ -112,13 +112,13 @@ private:
 
 	int numSparsePoints;
 	int numSparseBufferSize;
-    InputPointSparse<MAX_RES_PER_POINT>* originalInputSparse;
+    InputPointSparse<MAX_RES_PER_POINT>* originalInputSparse; // MAX_RES_PER_POINT=8
 
 
 	bool bufferValid;
 	int numGLBufferPoints;
 	int numGLBufferGoodPoints;
-	pangolin::GlBuffer vertexBuffer;
+	pangolin::GlBuffer vertexBuffer; //point cloud saved here?
 	pangolin::GlBuffer colorBuffer;
 };
 

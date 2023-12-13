@@ -153,6 +153,7 @@ public:
     void updatePangolinSettings();
 
 private:
+
     struct Parameter
     {
         Parameter(void* pointer, const std::function<void(void*, std::string)>& commandLineHandler,
@@ -168,6 +169,7 @@ private:
 
         std::unique_ptr<PangolinSettingVar> pangolinSetting;
     };
+
     std::map<std::string, Parameter> parameters;
 };
 }

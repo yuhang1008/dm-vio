@@ -56,10 +56,16 @@ constexpr char end = '\n';
 BAIMULogic::BAIMULogic(PreintegrationProviderBA* preintegrationProvider, BAGTSAMIntegration* baIntegration,
                        const IMUCalibration& imuCalibration,
                        IMUSettings& imuSettings)
-        : preintegrationProvider(preintegrationProvider), baIntegration(baIntegration), imuSettings(imuSettings),
-          imuCalibration(imuCalibration), scaleQueue(imuSettings.generalScaleIntervalSize),
-          optimizeScalePtr(new bool()), optimizeGravityPtr(new bool()), optimizedIMUExtrinsicsPtr(new bool()),
-          optimizeScale(*optimizeScalePtr), optimizeGravity(*optimizeGravityPtr),
+        : preintegrationProvider(preintegrationProvider),
+          baIntegration(baIntegration), 
+          imuSettings(imuSettings),
+          imuCalibration(imuCalibration), 
+          scaleQueue(imuSettings.generalScaleIntervalSize),
+          optimizeScalePtr(new bool()), 
+          optimizeGravityPtr(new bool()), 
+          optimizedIMUExtrinsicsPtr(new bool()),
+          optimizeScale(*optimizeScalePtr), 
+          optimizeGravity(*optimizeGravityPtr),
           optimizeIMUExtrinsics(*optimizedIMUExtrinsicsPtr)
 {
     if(!imuSettings.initSettings.disableVIOUntilFirstInit)

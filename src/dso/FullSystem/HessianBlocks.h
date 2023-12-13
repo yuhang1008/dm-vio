@@ -119,9 +119,10 @@ struct FrameHessian
 	//DepthImageWrap* frame;
 	FrameShell* shell;
 
-	Eigen::Vector3f* dI;				 // trace, fine tracking. Used for direction select (not for gradient histograms etc.)
-	Eigen::Vector3f* dIp[PYR_LEVELS];	 // coarse tracking / coarse initializer. NAN in [0] only.
-	float* absSquaredGrad[PYR_LEVELS];  // only used for pixel select (histograms etc.). no NAN.
+	Eigen::Vector3f* dI; //dI = dIp[0];	   // trace, fine tracking. Used for direction select (not for gradient histograms etc.)
+	
+	Eigen::Vector3f* dIp[PYR_LEVELS];	 // coarse tracking / coarse initializer. NAN in [0] only. <I, dx, dy>
+	float* absSquaredGrad[PYR_LEVELS];  // grayscale or irrandiance? only used for pixel select (histograms etc.). no NAN. 
 
     bool addCamPrior;
 
@@ -131,7 +132,7 @@ struct FrameHessian
 
 	// Photometric Calibration Stuff
 	float frameEnergyTH;	// set dynamically depending on tracking residual
-	float ab_exposure;
+	float ab_exposure; // exposure time
 
 	bool flaggedForMarginalization;
 
@@ -386,7 +387,7 @@ struct CalibHessian
 		this->value_scaledi[3] = - this->value_scaledf[3] / this->value_scaledf[1];
 	};
 
-
+	// B function
 	float Binv[256];
 	float B[256];
 
@@ -396,7 +397,7 @@ struct CalibHessian
 		int c = color+0.5f;
 		if(c<5) c=5;
 		if(c>250) c=250;
-		return B[c+1]-B[c];
+		return B[c+1]-B[c]; //? all return 1 nearly?
 	}
 
 	EIGEN_STRONG_INLINE float getBInvGradOnly(float color)
@@ -419,8 +420,6 @@ struct PointHessian
 	// static values
 	float color[MAX_RES_PER_POINT];			// colors in host frame
 	float weights[MAX_RES_PER_POINT];		// host-weights for respective residuals.
-
-
 
 	float u,v;
 	int idx;
@@ -487,10 +486,6 @@ struct PointHessian
 				numGoodResiduals > setting_minGoodResForMarg+10 &&
 				(int)residuals.size()-visInToMarg < setting_minGoodActiveResForMarg)
 			return true;
-
-
-
-
 
 		if(lastResiduals[0].second == ResState::OOB) return true;
 		if(residuals.size() < 2) return false;

@@ -95,6 +95,7 @@ CoarseTracker::CoarseTracker(int ww, int hh, dmvio::IMUIntegration &imuIntegrati
 	w[0]=h[0]=0;
 	refFrameID=-1;
 }
+
 CoarseTracker::~CoarseTracker()
 {
     for(float* ptr : ptrToDelete)

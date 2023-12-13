@@ -107,10 +107,21 @@ EIGEN_ALWAYS_INLINE Eigen::Vector3f getInterpolatedElement33(const Eigen::Vector
 	float dx = x - ix;
 	float dy = y - iy;
 	float dxdy = dx*dy;
-	const Eigen::Vector3f* bp = mat +ix+iy*width;
+	const Eigen::Vector3f* bp = mat +ix+iy*width; //base point
 
     checkBoundsPlus1(ix, iy, width);
 
+	// Bilinear interpolation: to interpolate the value of (*), which is a float index
+	// (ix,iy)           (ix+1,iy)
+	//    +------------------+
+	//    |                  |
+	//    |                  |
+	//    |                  |
+	//    |          *       |
+	//    |                  |
+	//    +------------------+
+	// (ix,iy+1)       (ix+1,iy+1)
+	// triky interpulation
 	return dxdy * *(const Eigen::Vector3f*)(bp+1+width)
 	        + (dy-dxdy) * *(const Eigen::Vector3f*)(bp+width)
 	        + (dx-dxdy) * *(const Eigen::Vector3f*)(bp+1)
@@ -129,6 +140,8 @@ EIGEN_ALWAYS_INLINE Eigen::Vector3f getInterpolatedElement33OverAnd(const Eigen:
 	const bool* bbp = overMat +ix+iy*width;
 	over_out = bbp[1+width] && bbp[1] && bbp[width] && bbp[0];
 
+	// Presumably, this is a function (not shown) that ensures ix and iy are within valid bounds of the array. 
+	// Given its name, it probably checks that the indices are safely within bounds such that accessing (ix + 1) and (iy + 1) won't go out of bounds.
     checkBoundsPlus1(ix, iy, width);
 
 	return dxdy * *(const Eigen::Vector3f*)(bp+1+width)

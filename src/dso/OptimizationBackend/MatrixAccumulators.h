@@ -115,7 +115,7 @@ public:
   inline void updateSingle(
 		  const float val)
   {
-	  SSEData[0] += val;
+	  SSEData[0] += val; // EIGEN_ALIGN16 float SSEData[4*1];
 	  num++; numIn1++;
 	  shiftUp(false);
   }
@@ -413,7 +413,7 @@ public:
 
 	  num+=4;
 	  numIn1++;
-	  shiftUp(false);
+	  shiftUp(false); // shift up if current level of container is full
   }
 
 
@@ -971,14 +971,6 @@ private:
   }
 };
 
-
-
-
-
-
-
-
-
 class Accumulator9
 {
 public:
@@ -1017,7 +1009,7 @@ public:
   }
 
 
-  inline void updateSSE(
+  inline void updateSSE( 
 		  const __m128 J0,const __m128 J1,
 		  const __m128 J2,const __m128 J3,
 		  const __m128 J4,const __m128 J5,
@@ -1025,7 +1017,23 @@ public:
 		  const __m128 J8)
   {
 	  float* pt=SSEData;
-	  _mm_store_ps(pt, _mm_add_ps(_mm_load_ps(pt),_mm_mul_ps(J0,J0))); pt+=4;
+
+	  // J0~J5 pose
+	  // J6 and J7 affine
+	  // J8 residual
+
+// follow order, from left to right, from top to bottom
+// x1x1, x1x2, x1x3, x1x4, x1x5, x1x6, x1a, x1b, x1r,
+// 		 x2x2, x2x3, x2x4, x2x5, x2x6, x2a, x2b, x2r,
+// 			   x3x3, x3x4, x3x5, x3x6, x3a, x3b, x3r,
+// 					 x4x4, x4x5, x4x6, x4a, x4b, x4r,
+// 						   x5x5, x5x6, x5a, x5b, x5r,
+// 								 x6x6, x6a, x6b, x6r,
+// 									   aa,  ab,  ar,
+// 					 						bb,  br,
+// 												 rr.
+
+	  _mm_store_ps(pt, _mm_add_ps(_mm_load_ps(pt),_mm_mul_ps(J0,J0))); pt+=4; // 
 	  _mm_store_ps(pt, _mm_add_ps(_mm_load_ps(pt),_mm_mul_ps(J0,J1))); pt+=4;
 	  _mm_store_ps(pt, _mm_add_ps(_mm_load_ps(pt),_mm_mul_ps(J0,J2))); pt+=4;
 	  _mm_store_ps(pt, _mm_add_ps(_mm_load_ps(pt),_mm_mul_ps(J0,J3))); pt+=4;
@@ -1083,9 +1091,6 @@ public:
 	  numIn1++;
 	  shiftUp(false);
   }
-
-
-
 
 
   inline void updateSSE_eighted(

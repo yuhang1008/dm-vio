@@ -107,6 +107,7 @@ struct PrepImageItem
 class ImageFolderReader
 {
 public:
+
 	ImageFolderReader(std::string path, std::string calibFile, std::string gammaFile, std::string vignetteFile, bool use16BitPassed)
 	{
 		this->path = path;
@@ -115,18 +116,16 @@ public:
 
 #if HAS_ZIPLIB
 		ziparchive=0;
-		databuffer=0;
+		databuffer=0; //?
 #endif
-
+		// check if is conpressed file
 		isZipped = (path.length()>4 && path.substr(path.length()-4) == ".zip");
-
-
-
 
 
 		if(isZipped)
 		{
 #if HAS_ZIPLIB
+		 	// read zip files, and push names to variable 'files'
 			int ziperror=0;
 			ziparchive = zip_open(path.c_str(),  ZIP_RDONLY, &ziperror);
 			if(ziperror!=0)
@@ -142,7 +141,7 @@ public:
 				const char* name = zip_get_name(ziparchive, k,  ZIP_FL_ENC_STRICT);
 				std::string nstr = std::string(name);
 				if(nstr == "." || nstr == "..") continue;
-				files.push_back(name);
+				files.push_back(name); // push all zip names into files
 			}
 
 			printf("got %d entries and %d files!\n", numEntries, (int)files.size());
@@ -155,7 +154,7 @@ public:
 		else
 			getdir (path, files);
 
-
+		// get undistort parameters
 		undistort = Undistort::getUndistorterForFile(calibFile, gammaFile, vignetteFile);
 
 
@@ -165,7 +164,7 @@ public:
 		height=undistort->getSize()[1];
 
 
-		// load timestamps if possible.
+		// load timestamps and exposure times, as well as ids
 		loadTimestamps();
 		printf("ImageFolderReader: got %d files in %s!\n", (int)files.size(), path.c_str());
 
@@ -202,7 +201,7 @@ public:
 		int w_out, h_out;
 		Eigen::Matrix3f K;
 		getCalibMono(K, w_out, h_out);
-		setGlobalCalib(w_out, h_out, K);
+		setGlobalCalib(w_out, h_out, K); // pyramid operations?
 	}
 
 	int getNumImages()
@@ -449,6 +448,7 @@ public:
 
 	// undistorter. [0] always exists, [1-2] only when MT is enabled.
 	Undistort* undistort;
+
 private:
 
 

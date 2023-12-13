@@ -120,7 +120,7 @@ void DelayedMarginalizationGraphs::addMainGraph(std::shared_ptr<DelayedGraph> de
     {
         callback(delayedGraph);
     }
-}
+} 
 
 void DelayedMarginalizationGraphs::replaceMainGraph(std::shared_ptr<DelayedGraph> delayedGraph)
 {

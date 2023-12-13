@@ -40,12 +40,13 @@ class PixelSelector
 {
 public:
 	EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
+	PixelSelector(int w, int h);
+	~PixelSelector();
+
 	int makeMaps(
 			const FrameHessian* const fh,
 			float* map_out, float density, int recursionsLeft=1, bool plot=false, float thFactor=1);
 
-	PixelSelector(int w, int h);
-	~PixelSelector();
 	int currentPotential;
 
 
@@ -59,10 +60,10 @@ private:
 
 	unsigned char* randomPattern;
 
-
-	int* gradHist;
-	float* ths;
-	float* thsSmoothed;
+	// these data at first block only
+	int* gradHist; // saves the histogram of grascale in each block over the img, each block is divided into 50 bins, bin saves the number pixels fal into the range
+	float* ths; // certain percentage of the data lies below the threshold
+	float* thsSmoothed; // smooth above data using neighbor index
 	int thsStep;
 	const FrameHessian* gradHistFrame;
 

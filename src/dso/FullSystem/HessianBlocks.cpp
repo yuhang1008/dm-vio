@@ -124,41 +124,62 @@ void FrameHessian::release()
 	immaturePoints.clear();
 }
 
-
+							// color is the irradiance of the image
 void FrameHessian::makeImages(float* color, CalibHessian* HCalib)
 {
-
+	// initilize dIp and absSquaredGrad for each level
 	for(int i=0;i<pyrLevelsUsed;i++)
-	{
+	{	
+
 		dIp[i] = new Eigen::Vector3f[wG[i]*hG[i]];
 		absSquaredGrad[i] = new float[wG[i]*hG[i]];
 	}
+
+	// first level
 	dI = dIp[0];
-
-
-	// make d0
 	int w=wG[0];
 	int h=hG[0];
 	for(int i=0;i<w*h;i++)
-		dI[i][0] = color[i];
+		dI[i][0] = color[i]; // save the grayscale to first element of DI
 
 	for(int lvl=0; lvl<pyrLevelsUsed; lvl++)
 	{
 		int wl = wG[lvl], hl = hG[lvl];
-		Eigen::Vector3f* dI_l = dIp[lvl];
-
+		Eigen::Vector3f* dI_l = dIp[lvl]; // grayscale, dx, dy
+		// dabs_l is the absolute squared gradient of certain level
 		float* dabs_l = absSquaredGrad[lvl];
+
+		// from the second level, calculate the grascale of current level from last (finer level)
+		// until the coarest level
+		// saved in dIp[lvl][point_index][0]
 		if(lvl>0)
-		{
+		{	
+			//m1 means minus one, the finer level
 			int lvlm1 = lvl-1;
 			int wlm1 = wG[lvlm1];
 			Eigen::Vector3f* dI_lm = dIp[lvlm1];
 
-
-
 			for(int y=0;y<hl;y++)
 				for(int x=0;x<wl;x++)
-				{
+				{	
+					//compute average of 4 pixels from the previous level as current level
+					// Top-left:     (2x, 2y)
+					// Top-right:    (2x + 1, 2y)
+					// Bottom-left:  (2x, 2y + 1)
+					// Bottom-right: (2x + 1, 2y + 1)
+
+					// Here's a visual depiction:
+
+					// scss
+
+					// Top-left     Top-right
+					//     ●---------●
+					//     |         |
+					//     |   (x,y) |
+					//     |   lvl   |
+					//     ●---------●
+					// Bottom-left Bottom-right
+
 					dI_l[x + y*wl][0] = 0.25f * (dI_lm[2*x   + 2*y*wlm1][0] +
 												dI_lm[2*x+1 + 2*y*wlm1][0] +
 												dI_lm[2*x   + 2*y*wlm1+wlm1][0] +
@@ -167,7 +188,8 @@ void FrameHessian::makeImages(float* color, CalibHessian* HCalib)
 		}
 
 		for(int idx=wl;idx < wl*(hl-1);idx++)
-		{
+		{	
+			// calculate grayscale gradient
 			float dx = 0.5f*(dI_l[idx+1][0] - dI_l[idx-1][0]);
 			float dy = 0.5f*(dI_l[idx+wl][0] - dI_l[idx-wl][0]);
 
@@ -178,12 +200,13 @@ void FrameHessian::makeImages(float* color, CalibHessian* HCalib)
 			dI_l[idx][1] = dx;
 			dI_l[idx][2] = dy;
 
-
+			// saved to absSquaredGrad
 			dabs_l[idx] = dx*dx+dy*dy;
 
+			// ?
 			if(setting_gammaWeightsPixelSelect==1 && HCalib!=0)
 			{
-				float gw = HCalib->getBGradOnly((float)(dI_l[idx][0]));
+				float gw = HCalib->getBGradOnly((float)(dI_l[idx][0])); // bound the grascale to 0-255
 				dabs_l[idx] *= gw*gw;	// convert to gradient of original color space (before removing response).
 			}
 		}

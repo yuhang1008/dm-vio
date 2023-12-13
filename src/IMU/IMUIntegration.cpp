@@ -54,8 +54,7 @@ IMUIntegration::IMUIntegration(dso::CalibHessian* HCalib, const IMUCalibration& 
     preintegrationParams->setAccelerometerCovariance(accelVar * Eigen::Matrix3d::Identity());
     preintegrationParams->setGyroscopeCovariance(gyroVar * Eigen::Matrix3d::Identity());
 
-
-    // Create Delayed Marginalization Graphs.
+    // Create Delayed Marginal ization Graphs.
     std::unique_ptr<BAGraphs> baGraphs;
     DelayedMarginalizationGraphs* delayedGraphs = new DelayedMarginalizationGraphs(0, BAIMULogic::METRIC_GROUP);
     baGraphs.reset(delayedGraphs);
@@ -63,7 +62,7 @@ IMUIntegration::IMUIntegration(dso::CalibHessian* HCalib, const IMUCalibration& 
     // Create BAGTSAMIntegration.
     // Pass empty transformation, because DSO and baGraph have the same coordinate system (except for the side of epsilon).
     std::unique_ptr<TransformIdentity> transformationDSOToBA(new TransformIdentity());
-    GTSAMIntegrationSettings baGTSAMSettings;
+    GTSAMIntegrationSettings baGTSAMSettings; // weight dso to gtsam???
     baGTSAMSettings.weightDSOToGTSAM = imuSettings.setting_weightDSOToGTSAM;
     baGTSAMIntegration.reset(
             new BAGTSAMIntegration(std::move(baGraphs), std::move(transformationDSOToBA), baGTSAMSettings, HCalib));

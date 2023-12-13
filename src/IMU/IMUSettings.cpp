@@ -85,6 +85,8 @@ void IMUCalibration::loadFromFile(std::string settingsFilename)
     std::cout << "Used T_cam_imu: " << std::endl << matrix << std::endl;
     T_cam_imu = Sophus::SE3d(matrix);
 
+    
+
     if(config["accelerometer_random_walk"] || config["gyroscope_random_walk"] || config["accelerometer_noise_density"]  ||
     config["gyroscope_noise_density"])
     {

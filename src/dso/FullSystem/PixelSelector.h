@@ -23,12 +23,8 @@
 
 
 #pragma once
-
-
 #include "util/NumType.h"
 
-
- 
 
 namespace dso
 {
@@ -36,12 +32,14 @@ namespace dso
 
 const float minUseGrad_pixsel = 10;
 
-
+// in each pot space, find the best direction maginitude pixel and its id
+// map_out will save the It only marks which pixels are selected based on having the highest gradient magnitude 
+// in any of the considered directions (XX, YY, XY, YX) within their respective grid cells (size determined by pot).
+// return  number of selected pixels
 template<int pot>
 inline int gridMaxSelection(Eigen::Vector3f* grads, bool* map_out, int w, int h, float THFac)
 {
-
-	memset(map_out, 0, sizeof(bool)*w*h);
+	memset(map_out, 0, sizeof(bool)*w*h); // clear the map in the recrusion
 
 	int numGood = 0;
 	for(int y=1;y<h-pot;y+=pot)
@@ -116,7 +114,7 @@ inline int gridMaxSelection(Eigen::Vector3f* grads, bool* map_out, int w, int h,
 	return numGood;
 }
 
-
+// mapout saves the max gradient at 4 directions in each potential 
 inline int gridMaxSelection(Eigen::Vector3f* grads, bool* map_out, int w, int h, int pot, float THFac)
 {
 
@@ -134,7 +132,7 @@ inline int gridMaxSelection(Eigen::Vector3f* grads, bool* map_out, int w, int h,
 
 			float bestXX=0, bestYY=0, bestXY=0, bestYX=0;
 
-			Eigen::Vector3f* grads0 = grads+x+y*w;
+			Eigen::Vector3f* grads0 = grads+x+y*w; // gradient of the point
 			for(int dx=0;dx<pot;dx++)
 				for(int dy=0;dy<pot;dy++)
 				{
@@ -142,6 +140,8 @@ inline int gridMaxSelection(Eigen::Vector3f* grads, bool* map_out, int w, int h,
 					Eigen::Vector3f g=grads0[idx];
 					float sqgd = g.tail<2>().squaredNorm();
 					float TH = THFac*minUseGrad_pixsel * (0.75f);
+
+					// THFac = 1; const float minUseGrad_pixsel = 10;
 
 					if(sqgd > TH*TH)
 					{
@@ -195,13 +195,21 @@ inline int gridMaxSelection(Eigen::Vector3f* grads, bool* map_out, int w, int h,
 	return numGood;
 }
 
-
+// map (just bool) will marks which pixels are selected based on having the highest gradient magnitude 
+// in any of the considered directions (XX, YY, XY, YX) within their respective grid cells (size determined by pot).
+// return  number of selected pixels
+// will do this -coarse-to-fine recrusively
 inline int makePixelStatus(Eigen::Vector3f* grads, bool* map, int w, int h, float desiredDensity, int recsLeft=5, float THFac = 1)
 {
-	if(sparsityFactor < 1) sparsityFactor = 1;
+	if(sparsityFactor < 1) sparsityFactor = 1; 
+	// actually, int sparsityFactor = 5
 
 	int numGoodPoints;
 
+	// in the sparsity factor space, find the best direction maginitude pixel and its id
+	// map (just bool) will marks which pixels are selected based on having the highest gradient magnitude
+	// in any of the considered directions (XX, YY, XY, YX) within their respective grid cells (size determined by pot).
+	// return  number of selected pixels
 
 	if(sparsityFactor==1) numGoodPoints = gridMaxSelection<1>(grads, map, w, h, THFac);
 	else if(sparsityFactor==2) numGoodPoints = gridMaxSelection<2>(grads, map, w, h, THFac);
@@ -226,13 +234,15 @@ inline int makePixelStatus(Eigen::Vector3f* grads, bool* map, int w, int h, floa
 	int newSparsity = (sparsityFactor * sqrtf(quotia))+0.7f;
 
 
-	if(newSparsity < 1) newSparsity=1;
+	if(newSparsity < 1) newSparsity=1; //indiactes that even lowest sparsity (1) cannot get points at desired number, decrease the THFac
 
 
-	float oldTHFac = THFac;
+	float oldTHFac = THFac; // THFac set to 1 bu default
+
 	if(newSparsity==1 && sparsityFactor==1) THFac = 0.5;
 
-
+	// recrusively run the function 
+	// untile numGoodPoints fall into the range
 	if((abs(newSparsity-sparsityFactor) < 1 && THFac==oldTHFac) ||
 			( quotia > 0.8 &&  1.0f / quotia > 0.8) ||
 			recsLeft == 0)
