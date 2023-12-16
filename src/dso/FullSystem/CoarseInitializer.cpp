@@ -524,6 +524,7 @@ Vec3f CoarseInitializer::calcResAndGS(
 				// d_affine * d_d
                 JbBuffer_new[i][6] += dp6[idx] * dd[idx];
                 JbBuffer_new[i][7] += dp7[idx] * dd[idx];
+
                 JbBuffer_new[i][8] += r[idx] * dd[idx];
                 JbBuffer_new[i][9] += dd[idx] * dd[idx];
             }
@@ -610,16 +611,19 @@ Vec3f CoarseInitializer::calcResAndGS(
 			accE[0].updateSingle((float)(point->energy[1]));
 		}
 		else
-		{
+		{	
+			// far -> small inverse_depth -> bigger energy_new[1] // if far add more energu since it may be uncertain?
+			// close -> big inverse depth -> smaller energy_new[1] // else if close, energy is accurate, add small energy
+			// add to accE[0]
 			point->energy_new[1] = (point->idepth_new-1)*(point->idepth_new-1);
 			accE[0].updateSingle((float)(point->energy_new[1]));
 		}
 	}
-	EAlpha.finish();
+	EAlpha.finish(); //empty
+
+	// alphaEnergy = factor*(translation.norm()* npts)
+	// larger the translation, more points, higher the alphaEnergy
 	float alphaEnergy = alphaW*(EAlpha.A + refToNew.translation().squaredNorm() * npts);
-
-	//printf("AE = %f * %f + %f\n", alphaW, EAlpha.A, refToNew.translation().squaredNorm() * npts);
-
 
 	// compute alpha opt.
 	float alphaOpt;
@@ -630,9 +634,8 @@ Vec3f CoarseInitializer::calcResAndGS(
 	}
 	else
 	{
-		alphaOpt = alphaW;
+		alphaOpt = alphaW; // 150*150
 	}
-
 
 	acc9SC.initialize();
 	for(int i=0;i<npts;i++)
@@ -641,13 +644,22 @@ Vec3f CoarseInitializer::calcResAndGS(
 		if(!point->isGood_new)
 			continue;
 
+		// if good points
+		// JbBuffer_new[i][9] += dd[idx] * dd[idx];
+		// bigger the gradient of idepth, higher the Hessian
 		point->lastHessian_new = JbBuffer_new[i][9];
+		
+		// JbBuffer_new[i][8] += r[idx] * dd[idx];
+        // JbBuffer_new[i][9] += dd[idx] * dd[idx];
 
+		// if alphaOpt != 0, which means alphaEnergy is small, 
+		// which means translation.norm()* npts is small
 		JbBuffer_new[i][8] += alphaOpt*(point->idepth_new - 1);
 		JbBuffer_new[i][9] += alphaOpt;
 
+		// alphaOpt==0, which means translation.norm()* npts is big
 		if(alphaOpt==0)
-		{
+		{	
 			JbBuffer_new[i][8] += couplingWeight*(point->idepth_new - point->iR);
 			JbBuffer_new[i][9] += couplingWeight;
 		}
